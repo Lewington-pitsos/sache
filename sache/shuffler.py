@@ -1,11 +1,10 @@
 import random
-from collections import defaultdict
 from sache.cache import Cache
 
 class Shuffler():
-    def __init__(self, cache):
+    def __init__(self, cache, n_shuffles):
         self.cache = cache
-        self.shuffle_record = defaultdict(list)
+        self.n_shuffles = n_shuffles
 
     def choose_two_indices(self):
         a_idx = random.randint(0, len(self.cache) - 1)
@@ -13,31 +12,18 @@ class Shuffler():
 
         return a_idx, b_idx
 
-    def _shuffle(self, a, b):
+    def shuffle_in_place(self, activations, loaded):
         pass
 
-    def continuous_shuffle(self):
-        while True: # while amount of shuffling is less than a certain amount
-            self.shuffle()
+    def shuffle(self, id):
+        activations = self.cache.take(id)
 
-    def shuffle(self):
-        while True:
-            a_idx, b_idx = self.choose_two_indices()
+        loaded_id, loaded = self.cache.take_random()
+        self.shuffle_in_place(activations, loaded)
 
-            a = self.cache.borrow(a_idx)
-            b = self.cache.borrow(b_idx)
-
-            if a is not None and b is not None:
-                break
-
-        a, b = self._shuffle(a, b)
-        
-        self.cache.give_back(a_idx, a)
-        self.cache.give_back(b_idx, b)
-
-        self.shuffle_record[a_idx].append(b_idx)
-        self.shuffle_record[b_idx].append(a_idx)
-    
+        self.cache.give_back(loaded_id, loaded)
+        self.cache.give_back(id, activations)
+            
 def shuffle(cache_dir):
     cache = Cache(cache_dir)
     shuffler = Shuffler(cache)

@@ -1,35 +1,18 @@
+import os
+import time
 from collections import defaultdict
 import random
 import torch
-from sae_lens import HookedSAETransformer, SAE
+from sae_lens import HookedSAETransformer
 from multiprocessing import Process
+import randomname
 
-class Generator():
-    def __init__(self, transformer_name, cache, device):
-        self.cache = cache
-
-        self.transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-        self.dataloader = None
-
-    def _activations_from_batch(self, input_ids):
-        _, all_hidden_states = self.transformer.run_with_cache(
-            input_ids, 
-            prepend_bos=True, 
-            stop_at_layer=self.sae.cfg.hook_layer + 1
-        )
-
-        return all_hidden_states
-
-    def generate(self):
-        for batch in self.dataloader:
-            input_ids = batch['input_ids']
-
-            activations = self._activations_from_batch(input_ids)
-            self.cache.append(activations)
 
 class Cache():
-    def __init__(self):
+    def __init__(self, cache_dir):
+        self.cache_dir = cache_dir
         self.cache = []
+        self.logger = ProcessLogger()
 
     def __iter__(self):
         idx = 0
@@ -50,10 +33,41 @@ class Cache():
     def give_back(self, idx, activations=None):
         pass
 
+class Generator():
+    def __init__(self, cache, transformer_name, dataset_path, device):
+        self.cache = cache
+        self.logger = ProcessLogger()
+        self.dataset_path = dataset_path
+
+        self.transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
+        self.dataloader = None
+
+    def _activations_from_batch(self, input_ids):
+        _, all_hidden_states = self.transformer.run_with_cache(
+            input_ids, 
+            prepend_bos=True, 
+            stop_at_layer=self.sae.cfg.hook_layer + 1
+        )
+
+        return all_hidden_states
+
+    def generate(self):
+        for batch in self.dataloader:
+            input_ids = batch['input_ids']
+
+            activations = self._activations_from_batch(input_ids)
+            self.cache.append(activations)
+
+def generate(cache_dir, **kwargs):
+    cache = Cache(cache_dir)
+    generator = Generator(cache, **kwargs)
+    generator.generate()
+
 class Shuffler():
     def __init__(self, cache):
         self.cache = cache
         self.shuffle_record = defaultdict(list)
+        self.logger = ProcessLogger()
 
     def choose_two_indices(self):
         a_idx = random.randint(0, len(self.cache) - 1)
@@ -86,15 +100,19 @@ class Shuffler():
         self.shuffle_record[a_idx].append(b_idx)
         self.shuffle_record[b_idx].append(a_idx)
     
-class Trainer():
-    def __init__(self, sae_model, sae_id, cache):
-        self.cache = cache
+def shuffle(cache_dir):
+    cache = Cache(cache_dir)
+    shuffler = Shuffler(cache)
+    shuffler.continuous_shuffle()
 
-        self.sae, _, _ = SAE.from_pretrained(
-            release = sae_model, # see other options in sae_lens/pretrained_saes.yaml
-            sae_id = sae_id, 
-            device = device
-        )
+class Trainer():
+    def __init__(self, sae, cache, n_epochs):
+        self.cache = cache  
+
+        self.sae = sae
+        self.logger = ProcessLogger()
+        self.n_epochs = n_epochs
+
 
     def _calculate_geometric_median():
         pass
@@ -107,11 +125,26 @@ class Trainer():
 
         return 
 
-    def train(self, n_epochs):
-        for epoch in range(n_epochs):
+    def _enough_of_a_head_start(self, cache):
+        return len(cache) > 100
+
+    def train(self):
+        while not self._enough_of_a_head_start(cache):
+            time.sleep(1)
+
+        for epoch in range(self.n_epochs):
             for activations, attention_mask in self.cache:
                 self._process_batch(activations, attention_mask)
 
+def train(cache_dir, **kwargs):
+    cache = Cache(cache_dir)
+    sae = None
+    trainer = Trainer(sae, cache, **kwargs)
+    trainer.train()
+
+class ProcessLogger():
+    def __init__(self):
+        pass
 
 if torch.cuda.is_available():
     device = 'cuda'
@@ -119,19 +152,27 @@ else:
     device = 'cpu'
 
 
-cache = None
-generator = Generator('gpt2', cache, device)
+params = {
+    'epochs': 10,
+    'transformer_name': 'gpt2',
+    'dataset_path': 'NeelNanda/pile-10k'
+}
 
-shuffler = Shuffler(cache)
+run_name = randomname.generate('adj/', 'n/', 'n/')
+base_cache_dir = 'cache'
+cache_dir = os.path.join(base_cache_dir, run_name)
 
-trainer = None # cache
+cache = Cache(cache_dir=cache_dir)
+
+generate_process = Process(target=generate, kwargs=({'cache_dir': cache_dir, **params}))
+generate_process.start()
+
+shuffle_process = Process(target=shuffle, kwargs=({'cache_dir': cache_dir}))
+shuffle_process.start()
+
+train(cache_dir, **params)
+
+generate_process.join()
+shuffle_process.join()
 
 
-# start new process 
-p = Process(target=generator.generate)
-p.start()
-
-p = Process(target=shuffler.continuous_shuffle)
-p.start()
-
-trainer.train()

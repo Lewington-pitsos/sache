@@ -1,0 +1,2 @@
+- see if we actually need sae_lens for the generator
+- shuffler add some kin

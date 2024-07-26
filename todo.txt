@@ -1,4 +1,7 @@
 - see if we actually need sae_lens for the generator
-- shuffler add some kin
-- fix cache (at the moment all indices are borrowed and none returned when we iterate, we need to design an iterator where the cache manages its own loans)
-- prevent race conditions
+- check sae_lens see if they do anything special for generation
+- check sae see if they do anything special for generation
+- check tokenize and concatenate for:
+    - what does it look like?
+    - how many are dropped?
+    - 

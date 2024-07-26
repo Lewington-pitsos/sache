@@ -1,89 +1,139 @@
-from __future__ import annotations
 
-from typing import Dict, List
+# sneakily stolen from https://github.com/EleutherAI/sae/blob/9e43ce3e39dcba003df96af8c9449bc5b5937b83/sae/data.py (seemed
+# excessive to include the whole thing just for this)
 
-import einops
-import numpy as np
-from datasets.arrow_dataset import Dataset
-from transformers import AutoTokenizer
+import math
+from multiprocessing import cpu_count
+from typing import Union
 
-#/ NOTE: all this code is taken from https://github.com/TransformerLensOrg/TransformerLens, I didn't want to add a big dependency just for this function
+from datasets import Dataset, DatasetDict
+from transformers import PreTrainedTokenizerBase
 
-def keep_single_column(dataset: Dataset, col_name: str):
-    """
-    Acts on a HuggingFace dataset to delete all columns apart from a single column name - useful when we want to tokenize and mix together different strings
-    """
-    for key in dataset.features:
-        if key != col_name:
-            dataset = dataset.remove_columns(key)
-    return dataset
-
-
-def tokenize_and_concatenate(
-    dataset: Dataset,
-    tokenizer: AutoTokenizer,
-    streaming: bool = False,
-    max_length: int = 1024,
-    column_name: str = "text",
-    add_bos_token: bool = True,
-    num_proc: int = 10,
+def chunk_and_tokenize(
+    data: Dataset,
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    format: str = "torch",
+    num_proc: int = cpu_count() // 2,
+    text_key: str = "text",
+    max_seq_len: int = 2048,
+    return_final_batch: bool = False,
+    load_from_cache_file: bool = True,
+    batch_size: int = 2048,
 ) -> Dataset:
-    """Helper function to tokenizer and concatenate a dataset of text. This converts the text to tokens, concatenates them (separated by EOS tokens) and then reshapes them into a 2D array of shape (____, sequence_length), dropping the last batch. Tokenizers are much faster if parallelised, so we chop the string into 20, feed it into the tokenizer, in parallel with padding, then remove padding at the end.
+    """Perform GPT-style chunking and tokenization on a dataset.
 
-    This tokenization is useful for training language models, as it allows us to efficiently train on a large corpus of text of varying lengths (without, eg, a lot of truncation or padding). Further, for models with absolute positional encodings, this avoids privileging early tokens (eg, news articles often begin with CNN, and models may learn to use early positional encodings to predict these)
+    The resulting dataset will consist entirely of chunks exactly `max_seq_len` tokens
+    long. Long sequences will be split into multiple chunks, and short sequences will
+    be merged with their neighbors, using `eos_token` as a separator. The fist token
+    will also always be an `eos_token`.
 
     Args:
-        dataset (Dataset): The dataset to tokenize, assumed to be a HuggingFace text dataset.
-        tokenizer (AutoTokenizer): The tokenizer. Assumed to have a bos_token_id and an eos_token_id.
-        streaming (bool, optional): Whether the dataset is being streamed. If True, avoids using parallelism. Defaults to False.
-        max_length (int, optional): The length of the context window of the sequence. Defaults to 1024.
-        column_name (str, optional): The name of the text column in the dataset. Defaults to 'text'.
-        add_bos_token (bool, optional): . Defaults to True.
+        data: The dataset to chunk and tokenize.
+        tokenizer: The tokenizer to use.
+        format: The format to return the dataset in, passed to `Dataset.with_format`.
+        num_proc: The number of processes to use for tokenization.
+        text_key: The key in the dataset to use as the text to tokenize.
+        max_seq_len: The maximum length of a batch of input ids.
+        return_final_batch: Whether to return the final batch, which may be smaller
+            than the others.
+        load_from_cache_file: Whether to load from the cache file.
 
     Returns:
-        Dataset: Returns the tokenized dataset, as a dataset of tensors, with a single column called "tokens"
-
-    Note: There is a bug when inputting very small datasets (eg, <1 batch per process) where it just outputs nothing. I'm not super sure why
+        The chunked and tokenized dataset.
     """
-    dataset = keep_single_column(dataset, column_name)
-    if tokenizer.pad_token is None:
-        # We add a padding token, purely to implement the tokenizer. This will be removed before inputting tokens to the model, so we do not need to increment d_vocab in the model.
-        tokenizer.add_special_tokens({"pad_token": "<PAD>"})
-    # Define the length to chop things up into - leaving space for a bos_token if required
-    if add_bos_token:
-        seq_len = max_length - 1
-    else:
-        seq_len = max_length
 
-    def tokenize_function(examples: Dict[str, List[str]]) -> Dict[str, np.ndarray]:
-        text = examples[column_name]
-        # Concatenate it all into an enormous string, separated by eos_tokens
-        full_text = tokenizer.eos_token.join(text)
-        # Divide into 20 chunks of ~ equal length
-        num_chunks = 20
-        chunk_length = (len(full_text) - 1) // num_chunks + 1
-        chunks = [full_text[i * chunk_length : (i + 1) * chunk_length] for i in range(num_chunks)]
-        # Tokenize the chunks in parallel. Uses NumPy because HuggingFace map doesn't want tensors returned
-        tokens = tokenizer(chunks, return_tensors="np", padding=True)["input_ids"].flatten()
-        # Drop padding tokens
-        tokens = tokens[tokens != tokenizer.pad_token_id]
-        num_tokens = len(tokens)
-        num_batches = num_tokens // (seq_len)
-        # Drop the final tokens if not enough to make a full sequence
-        tokens = tokens[: seq_len * num_batches]
-        tokens = einops.rearrange(
-            tokens, "(batch seq) -> batch seq", batch=num_batches, seq=seq_len
+    def _tokenize_fn(x: dict[str, list], leftovers: list=[]):
+        chunk_size = min(tokenizer.model_max_length, max_seq_len)
+        sep = tokenizer.eos_token or "<|endoftext|>"
+        joined_text = sep.join([""] + x[text_key])
+        output = tokenizer(
+            # Concatenate all the samples together, separated by the EOS token.
+            joined_text,  # start with an eos token
+            max_length=chunk_size,
+            return_attention_mask=False,
+            return_overflowing_tokens=True,
+            truncation=True,
         )
-        if add_bos_token:
-            prefix = np.full((num_batches, 1), tokenizer.bos_token_id)
-            tokens = np.concatenate([prefix, tokens], axis=1)
-        return {"tokens": tokens}
 
-    tokenized_dataset = dataset.map(
-        tokenize_function,
+        if overflow := output.pop("overflowing_tokens", None):
+            # Slow Tokenizers return unnested lists of ints
+            assert isinstance(output.input_ids[0], int)
+
+            # Chunk the overflow into batches of size `chunk_size`
+            chunks = [output["input_ids"]] + [
+                overflow[i * chunk_size : (i + 1) * chunk_size]
+                for i in range(math.ceil(len(overflow) / chunk_size))
+            ]
+            output = {"input_ids": chunks}
+
+        if (not return_final_batch) and len(output["input_ids"][-1]) != chunk_size:
+            # we do not pad so if the last batch is smaller than the required
+            # batch size we either lengthen it using leftover batches or put
+            # it in the basket of leftovers
+            final_chunk = output["input_ids"].pop()
+            
+            while len(final_chunk) < chunk_size:
+                if len(leftovers) == 0:
+                    leftovers.append(final_chunk)
+                    break
+                
+                leftover = leftovers.pop()
+                final_chunk.extend([tokenizer.eos_token_id] + leftover)
+            else:
+                new_leftover = final_chunk[chunk_size:]
+                final_chunk = final_chunk[:chunk_size]
+                output["input_ids"].append(final_chunk)
+                
+                if len(new_leftover) > 0:
+                    leftovers.append(new_leftover)
+
+            output = {k: v[:len(output['input_ids'])] for k, v in output.items()}
+
+
+        output_batch_size = len(output["input_ids"])
+
+        if output_batch_size == 0:
+            raise ValueError(
+                "Not enough data to create a single complete batch."
+                " Either allow the final batch to be returned,"
+                " or supply more data."
+            )
+
+        return output
+
+    data = data.map(
+        _tokenize_fn,
+        # Batching is important for ensuring that we don't waste tokens
+        # since we always throw away the last element of the batch we
+        # want to keep the batch size as large as possible
         batched=True,
-        num_proc=(num_proc if not streaming else None),
-        remove_columns=[column_name],
+        batch_size=batch_size,
+        num_proc=num_proc,
+        remove_columns=get_columns_all_equal(data),
+        load_from_cache_file=load_from_cache_file,
+        fn_kwargs={} if return_final_batch else {"leftovers": []}
     )
-    tokenized_dataset.set_format(type="torch", columns=["tokens"])
-    return tokenized_dataset
+    return data.with_format(format, columns=["input_ids"])
+
+
+def get_columns_all_equal(dataset: Union[Dataset, DatasetDict]) -> list[str]:
+    """Get a single list of columns in a `Dataset` or `DatasetDict`.
+
+    We assert the columms are the same across splits if it's a `DatasetDict`.
+
+    Args:
+        dataset: The dataset to get the columns from.
+
+    Returns:
+        A list of columns.
+    """
+    if isinstance(dataset, DatasetDict):
+        cols_by_split = dataset.column_names.values()
+        columns = next(iter(cols_by_split))
+        if not all(cols == columns for cols in cols_by_split):
+            raise ValueError("All splits must have the same columns")
+
+        return columns
+
+    return dataset.column_names

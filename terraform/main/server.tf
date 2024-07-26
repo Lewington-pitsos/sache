@@ -26,7 +26,7 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
-resource "aws_instance" "example" {
+resource "aws_instance" "sache" {
   ami           = "ami-080e1f13689e07408" 
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer.key_name
@@ -34,7 +34,7 @@ resource "aws_instance" "example" {
   security_groups = [aws_security_group.allow_ssh.name]
 
   tags = {
-    Name = "ExampleInstance"
+    Name = "sache"
   }
 
   root_block_device {

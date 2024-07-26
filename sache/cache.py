@@ -2,9 +2,61 @@ import random
 import os
 import torch
 from uuid import uuid4
+import boto3
+from io import BytesIO
 
 STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
+BUCKET_NAME = 'sache'
+
+
+class CloudWCache():
+    def __init__(self, run_name, batch_size=1):
+        self.batch_size = batch_size
+        self.run_name = run_name
+        self._in_mem = []
+        self.s3_client = boto3.client('s3')
+
+    def _save_in_mem(self):
+        id = self._save(torch.cat(self._in_mem), str(uuid4()))
+        self._in_mem = []
+
+        return id
+
+    def append(self, activations):
+        self._in_mem.append(activations)
+
+        if len(self._in_mem) >= self.batch_size:
+            return self._save_in_mem()
+
+        return None
+
+    def finalize(self):
+        if self._in_mem:
+            self._save_in_mem()
+
+    def _filename(self, id):
+        return f'{self.run_name}/{id}.saved.pt'
+
+    def _save(self, activations, id):
+        filename = self._filename(id)
+
+        buffer = BytesIO()
+        torch.save(activations, buffer)
+        buffer.seek(0)
+        
+        s3_client = boto3.client('s3')
+        s3_client.upload_fileobj(buffer, BUCKET_NAME, filename)
+
+        return id
+
+    def load(self, id):
+        filename = self._filename(id)
+        buffer = BytesIO()
+        self.s3_client.download_fileobj(BUCKET_NAME, filename, buffer)
+        buffer.seek(0)
+
+        return torch.load(buffer)
 
 class WCache():
     def __init__(self, run_name, batch_size=1):

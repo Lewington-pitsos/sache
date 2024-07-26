@@ -30,7 +30,8 @@ class Trainer():
             time.sleep(1)
 
         for epoch in range(self.n_epochs):
-            for activations, attention_mask in self.cache:
+            for _, activations in self.cache:
+                attention_mask, activations = activations[:, -1], activations[:, :-1]
                 self._process_batch(activations, attention_mask)
 
 def train(cache_dir, **kwargs):

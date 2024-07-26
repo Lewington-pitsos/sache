@@ -6,18 +6,14 @@ from uuid import uuid4
 STAGES = ['saving', 'saved', 'shuffled']
 
 class Cache():
-    def __init__(self, cache_dir, loan_stage, return_stage, device=None):
+    def __init__(self, cache_dir, read_stage, device=None):
         self.cache_dir = cache_dir
         self._relevant = {}
-        self.loan_stage = loan_stage
-        self.return_stage = return_stage
+        self.loan_stage = read_stage
         self.device = device
 
-        if loan_stage not in STAGES:
-            raise ValueError(f'loan_stage must be among {STAGES} got {loan_stage}')
-
-        if return_stage not in STAGES:
-            raise ValueError(f'return_stage must be among {STAGES} got {return_stage}')
+        if read_stage not in STAGES:
+            raise ValueError(f'loan_stage must be among {STAGES} got {read_stage}')
 
     def __iter__(self):
         self.reset_buffer(self.loan_stage)
@@ -34,7 +30,7 @@ class Cache():
         return torch.load(self._relevant[id], map_location=self.device)
 
     def give_back(self, id, activations):
-        self.save(activations, self.return_stage, id)
+        self.save(activations, self.loan_stage, id)
 
     def take(self, id):
         activations = self._load(id)
@@ -42,6 +38,11 @@ class Cache():
         del self._relevant[id]
 
         return activations
+    
+    def move_stage(self, id, current_stage, next_stage):
+        old_filename = self._filename(id, current_stage)
+        new_filename = self._filename(id, next_stage)
+        os.rename(old_filename, new_filename)
 
     def take_random(self):
         ids = list(self._relevant.keys())
@@ -52,7 +53,7 @@ class Cache():
     def _filename(self, id, stage):
         return os.path.join(self.cache_dir, f'{id}.{stage}.pt')
 
-    def append(self, activations):
+    def append(self, activations, attention_mask=None):
         self.save(activations, 'saved', str(uuid4()))
 
     def save(self, activations, stage, id):
@@ -60,8 +61,8 @@ class Cache():
         relative_path = os.path.join(self.cache_dir, filename)
         torch.save(relative_path, activations)
 
-        os.rename(relative_path, relative_path.replace('.saving.pt', f'.{stage}.pt')) # prevent reads of incomplete files
-
+        self.move_stage(id, 'saving', stage)
+        
     def reset_buffer(self):
         all_files = os.listdir(self.cache_dir)
         self._n_files = len(all_files)

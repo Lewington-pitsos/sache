@@ -6,8 +6,8 @@ from uuid import uuid4
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, cache_dir):
-        self.cache_dir = cache_dir
+    def __init__(self, run_name):
+        self.run_name = run_name
         self.logger_id = str(uuid4())
 
         if not os.path.exists(LOG_DIR):
@@ -16,7 +16,7 @@ class ProcessLogger():
         print('Logging to', self._log_filename())
 
     def _log_filename(self):
-        return os.path.join(LOG_DIR,  self.cache_dir + '_' + self.logger_id + '.jsonl')
+        return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
 
     def log(self, data):
         if 'timestamp' not in data:

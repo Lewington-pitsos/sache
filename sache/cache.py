@@ -7,10 +7,10 @@ STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
 
 class WCache():
-    def __init__(self, cache_dir, batch_size=1):
+    def __init__(self, run_name, batch_size=1):
         self.batch_size = batch_size
 
-        self.cache_dir = os.path.join(BASE_CACHE_DIR, cache_dir)
+        self.cache_dir = os.path.join(BASE_CACHE_DIR, run_name)
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir, exist_ok=True)
 
@@ -48,10 +48,9 @@ class WCache():
         new_filename = self._filename(id, next_stage)
         os.rename(old_filename, new_filename)
 
-
 class WRCache(WCache):
-    def __init__(self, cache_dir, read_stage=None, device=None):
-        super().__init__(cache_dir)
+    def __init__(self, run_name, read_stage=None, device=None):
+        super().__init__(run_name)
         
         self._relevant = {}
         self.loan_stage = read_stage
@@ -64,12 +63,6 @@ class WRCache(WCache):
         self.reset_buffer(self.loan_stage)
         for id, v in self._relevant.items():
             yield id, torch.load(v, map_location=self.device)
-
-    def __len__(self):
-        return len(self._relevant)
-    
-    def loaned_keys(self):
-        return self._relevant.keys()
 
     def _load(self, id):
         return torch.load(self._relevant[id], map_location=self.device)

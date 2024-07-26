@@ -21,18 +21,16 @@ params = {
 }
 
 run_name = randomname.generate('adj/', 'n/', 'n/')
-base_cache_dir = 'cache'
-cache_dir = os.path.join(base_cache_dir, run_name)
 
-cache = Cache(cache_dir=cache_dir)
+cache = Cache(run_name=run_name)
 
-generate_process = Process(target=generate, kwargs=({'cache_dir': cache_dir, **params}))
+generate_process = Process(target=generate, kwargs=({'cache_dir': run_name, **params}))
 generate_process.start()
 
-shuffle_process = Process(target=shuffle, kwargs=({'cache_dir': cache_dir}))
+shuffle_process = Process(target=shuffle, kwargs=({'cache_dir': run_name}))
 shuffle_process.start()
 
-train(cache_dir, **params)
+train(run_name, **params)
 
 generate_process.join()
 shuffle_process.join()

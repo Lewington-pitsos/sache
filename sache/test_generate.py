@@ -12,7 +12,7 @@ def test_generate():
 
 
     generate(
-        cache_dir=human_readable_time,
+        run_name=human_readable_time,
         dataset=dataset, 
         batches_per_cache=2,
         transformer_name='EleutherAI/pythia-70m', 

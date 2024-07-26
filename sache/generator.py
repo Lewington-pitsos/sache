@@ -1,7 +1,5 @@
-import os
 import time
 import torch
-from datasets import load_dataset
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 
@@ -9,10 +7,9 @@ from sache.cache import WCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
 
-
 class GenerationLogger(ProcessLogger):
-    def __init__(self, cache_dir, cache, tokenizer, log_every=100):
-        super().__init__(cache_dir)
+    def __init__(self, run_name, cache, tokenizer, log_every=100):
+        super().__init__(run_name)
         self.tokenizer = tokenizer
         self.log_every = log_every
         self.cache = cache
@@ -22,7 +19,7 @@ class GenerationLogger(ProcessLogger):
         self.sample_activations = 64
 
         if self.cache.n_saved() > 0:
-            self.log({'warning': 'Cache directory is not empty, this may lead to unexpected behavior', 'cache_dir': cache_dir, 'file_count': len(self.cache.n_saved())})
+            self.log({'warning': 'Cache directory is not empty, this may lead to unexpected behavior', 'run_name': run_name, 'file_count': len(self.cache.n_saved())})
 
 
     def log_batch(self, activations, attention_mask,  input_ids):
@@ -66,7 +63,7 @@ class GenerationLogger(ProcessLogger):
         pass
 
 def generate(
-        cache_dir, 
+        run_name, 
         batches_per_cache,
         dataset, 
         transformer_name, 
@@ -82,8 +79,8 @@ def generate(
     torch.manual_seed(seed)
 
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    cache = WCache(cache_dir, batch_size=batches_per_cache)
-    logger = GenerationLogger(cache_dir, cache, transformer.tokenizer)
+    cache = WCache(run_name, batch_size=batches_per_cache)
+    logger = GenerationLogger(run_name, cache, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(
         dataset, 
@@ -93,7 +90,6 @@ def generate(
     )
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
     
     transformer.eval()
     with torch.no_grad():
@@ -118,22 +114,3 @@ def generate(
     cache.finalize()
 
     logger.finalize()
-
-if __name__ == '__main__':
-
-    dataset = load_dataset('NeelNanda/pile-10k')['train']
-    
-    human_readable_time = time.strftime("%Y%m%d-%H%M%S")
-
-    generate(
-        cache_dir='testing/t1' + human_readable_time,
-        dataset=dataset, 
-        batches_per_cache=10,
-        transformer_name='EleutherAI/pythia-70m', 
-        max_length=512, 
-        batch_size=8, 
-        text_column_name='text', 
-        device='cpu',
-        layer=5,
-        hook_name='blocks.4.hook_resid_post',
-    )

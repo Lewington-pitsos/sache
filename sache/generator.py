@@ -1,47 +1,38 @@
+import os
 import time
 import torch
 from datasets import load_dataset
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 
-from sache.cache import Cache
+from sache.cache import WCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
 
 
-def activations_from_batch(transformer, input_ids, layer):
-    _, all_hidden_states = transformer.run_with_cache(
-        input_ids, 
-        prepend_bos=True, 
-        stop_at_layer=layer + 1
-    )
-
-    return all_hidden_states
-
-class GenerationLogger():
-    def __init__(self, cache_dir, tokenizer, log_every=100):
-        self.cache_dir = cache_dir
-        self.lg = ProcessLogger(cache_dir)
-        self.log_every = log_every
-        self.n = 0
-        self.start_time = time.time()
-        self.sample_features = 64
+class GenerationLogger(ProcessLogger):
+    def __init__(self, cache_dir, cache, tokenizer, log_every=100):
+        super().__init__(cache_dir)
         self.tokenizer = tokenizer
+        self.log_every = log_every
+        self.cache = cache
 
-    def log_batch(self, activations, input_ids, attention_mask):
+        self.n = 0
+        self.start_time = None
+        self.sample_activations = 64
+
+        if self.cache.n_saved() > 0:
+            self.log({'warning': 'Cache directory is not empty, this may lead to unexpected behavior', 'cache_dir': cache_dir, 'file_count': len(self.cache.n_saved())})
+
+
+    def log_batch(self, activations, attention_mask,  input_ids):
         self.n += 1
-        batch_size = activations.shape[0]
         if self.n % self.log_every == 0:
-            if self.start_time is None:
-                elapsed = 0
-            else:
-                elapsed = time.time() - self.start_time
-            
+            batch_size = activations.shape[0]
+
             sample_sequence_act = activations[0]
-            self.lg.log({
+            log_data = {
                 'batches_processed': self.n * batch_size, 
-                'seconds_since_last_batch': elapsed, 
-                'batches_per_second': self.log_every * batch_size  / elapsed,
                 
                 'activation_shape': activations.shape, 
                 'activations_mean': activations.mean().item(), 
@@ -49,56 +40,100 @@ class GenerationLogger():
                 'activations_max': activations.max().item(),
                 'activations_std': activations.std().item(),
 
-                'sample_mean_activations': torch.mean(sample_sequence_act[:, self.sample_features:], dim=0).tolist(),
-                'sample_max_activations': torch.max(sample_sequence_act[:, self.sample_features:], dim=0).tolist(),
-                'sample_min_activations': torch.min(sample_sequence_act[:, self.sample_features:], dim=0).tolist(),
-                'sample_plaintext': self.tokenizer.decode(input_ids[0][:self.sample_features]),
-                'sample_attention_mask': attention_mask[0][:self.sample_features].tolist(),
-            })
-            self.start_time = time.time()
+                'sample_mean_activations': torch.mean(sample_sequence_act[:, self.sample_activations:], dim=0).tolist(),
+                'sample_max_activations': torch.max(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
+                'sample_min_activations': torch.min(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
+                
+                'sample_attention_mask': attention_mask[0][:self.sample_activations].tolist(),
+                'attention_mask_shape': attention_mask.shape,
+                'attention_mask_sum': attention_mask.sum().item(),
+                
+                'sample_plaintext': self.tokenizer.decode(input_ids[0][:self.sample_activations]),
+            }
+
+            if self.start_time is None:
+                self.start_time = time.time()
+            else:
+                current_time = time.time()
+                elapsed = current_time - self.start_time
+                self.start_time = current_time
+                log_data['seconds_since_last_log'] = elapsed
+                log_data['samples_per_second'] = self.log_every * batch_size / elapsed    
+
+            self.log(log_data)
 
     def finalize(self):
         pass
 
 def generate(
         cache_dir, 
+        batches_per_cache,
         dataset, 
         transformer_name, 
         max_length, 
         batch_size, 
         text_column_name, 
         device,
-        output_layer,
+        layer,
+        hook_name,
+        seed=42
     ):
 
-    dataset = load_dataset(dataset)
+    torch.manual_seed(seed)
+
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    logger = GenerationLogger(cache_dir, transformer.tokenizer)
+    cache = WCache(cache_dir, batch_size=batches_per_cache)
+    logger = GenerationLogger(cache_dir, cache, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(
         dataset, 
         transformer.tokenizer, 
-        streaming=True, 
-        max_length=max_length, 
-        column_name=text_column_name, 
-        add_bos_token=True  
+        text_key=text_column_name, 
+        max_seq_len=max_length,
     )
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    cache = Cache(cache_dir)
     
     transformer.eval()
     with torch.no_grad():
         for batch in dataloader:
             input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            activations = activations_from_batch(transformer, input_ids, output_layer)
+            attention_mask = torch.ones_like(input_ids) # attention mask is always 1 BUT we want to be able to save it for cases when it is not (e.g. evals)
+
+            _, activations = transformer.run_with_cache(
+                input_ids, 
+                prepend_bos=False, # each sample is actually multiple concatenated samples
+                stop_at_layer=layer
+            )
+            activations = activations[hook_name]
 
             logger.log_batch(activations, attention_mask, input_ids)
+
             attention_mask = attention_mask.unsqueeze(-1).expand_as(activations)
             activations = torch.cat([activations, attention_mask], dim=-1)
 
             cache.append(activations)
+        
+    cache.finalize()
 
     logger.finalize()
+
+if __name__ == '__main__':
+
+    dataset = load_dataset('NeelNanda/pile-10k')['train']
+    
+    human_readable_time = time.strftime("%Y%m%d-%H%M%S")
+
+    generate(
+        cache_dir='testing/t1' + human_readable_time,
+        dataset=dataset, 
+        batches_per_cache=10,
+        transformer_name='EleutherAI/pythia-70m', 
+        max_length=512, 
+        batch_size=8, 
+        text_column_name='text', 
+        device='cpu',
+        layer=5,
+        hook_name='blocks.4.hook_resid_post',
+    )

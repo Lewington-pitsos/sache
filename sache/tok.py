@@ -18,7 +18,6 @@ def chunk_and_tokenize(
     text_key: str = "text",
     max_seq_len: int = 2048,
     return_final_batch: bool = False,
-    load_from_cache_file: bool = True,
     batch_size: int = 2048,
 ) -> Dataset:
     """Perform GPT-style chunking and tokenization on a dataset.
@@ -37,7 +36,6 @@ def chunk_and_tokenize(
         max_seq_len: The maximum length of a batch of input ids.
         return_final_batch: Whether to return the final batch, which may be smaller
             than the others.
-        load_from_cache_file: Whether to load from the cache file.
 
     Returns:
         The chunked and tokenized dataset.
@@ -111,7 +109,6 @@ def chunk_and_tokenize(
         batch_size=batch_size,
         num_proc=num_proc,
         remove_columns=get_columns_all_equal(data),
-        load_from_cache_file=load_from_cache_file,
         fn_kwargs={} if return_final_batch else {"leftovers": []}
     )
     return data.with_format(format, columns=["input_ids"])

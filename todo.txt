@@ -4,4 +4,5 @@
 - check tokenize and concatenate for:
     - what does it look like?
     - how many are dropped?
-    - 
+    - try prepend BOS
+- understand resid pre/post what they mean

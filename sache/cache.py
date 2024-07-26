@@ -3,11 +3,56 @@ import os
 import torch
 from uuid import uuid4
 
-STAGES = ['saving', 'saved', 'shuffled']
+STAGES = ['saved', 'shuffled']
+BASE_CACHE_DIR = 'cache'
 
-class Cache():
-    def __init__(self, cache_dir, read_stage, device=None):
-        self.cache_dir = cache_dir
+class WCache():
+    def __init__(self, cache_dir, batch_size=1):
+        self.batch_size = batch_size
+
+        self.cache_dir = os.path.join(BASE_CACHE_DIR, cache_dir)
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir, exist_ok=True)
+
+        self._in_mem = []
+    
+
+    def n_saved(self):
+        return len(os.listdir(self.cache_dir))
+
+    def _save_in_mem(self):
+        self._save(torch.cat(self._in_mem), 'saved', str(uuid4()))
+        self._in_mem = []
+
+    def append(self, activations):
+        self._in_mem.append(activations)
+
+        if len(self._in_mem) >= self.batch_size:
+            self._save_in_mem()
+
+    def finalize(self):
+        if self._in_mem:
+            self._save_in_mem()
+
+    def _filename(self, id, stage):
+        return os.path.join(self.cache_dir, f'{id}.{stage}.pt')
+
+    def _save(self, activations, stage, id):
+        filename = self._filename(id, 'saving')
+        torch.save(activations, filename)
+
+        self._move_stage(id, 'saving', stage)
+
+    def _move_stage(self, id, current_stage, next_stage):
+        old_filename = self._filename(id, current_stage)
+        new_filename = self._filename(id, next_stage)
+        os.rename(old_filename, new_filename)
+
+
+class WRCache(WCache):
+    def __init__(self, cache_dir, read_stage=None, device=None):
+        super().__init__(cache_dir)
+        
         self._relevant = {}
         self.loan_stage = read_stage
         self.device = device
@@ -30,7 +75,7 @@ class Cache():
         return torch.load(self._relevant[id], map_location=self.device)
 
     def give_back(self, id, activations):
-        self.save(activations, self.loan_stage, id)
+        self._save(activations, self.loan_stage, id)
 
     def take(self, id):
         activations = self._load(id)
@@ -38,30 +83,12 @@ class Cache():
         del self._relevant[id]
 
         return activations
-    
-    def move_stage(self, id, current_stage, next_stage):
-        old_filename = self._filename(id, current_stage)
-        new_filename = self._filename(id, next_stage)
-        os.rename(old_filename, new_filename)
 
     def take_random(self):
         ids = list(self._relevant.keys())
         id = random.choice(ids)
 
         return id, self._load(id)
-
-    def _filename(self, id, stage):
-        return os.path.join(self.cache_dir, f'{id}.{stage}.pt')
-
-    def append(self, activations, attention_mask=None):
-        self.save(activations, 'saved', str(uuid4()))
-
-    def save(self, activations, stage, id):
-        filename = self._filename(id, 'saving')
-        relative_path = os.path.join(self.cache_dir, filename)
-        torch.save(relative_path, activations)
-
-        self.move_stage(id, 'saving', stage)
         
     def reset_buffer(self):
         all_files = os.listdir(self.cache_dir)

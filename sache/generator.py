@@ -3,9 +3,9 @@ import torch
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 
-from sache.cache import WCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
+from sache.shuffler import ShufflingCache
 
 class GenerationLogger(ProcessLogger):
     def __init__(self, run_name, cache, tokenizer, log_every=100):
@@ -79,8 +79,8 @@ def generate(
     torch.manual_seed(seed)
 
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    cache = WCache(run_name, save_every=batches_per_cache)
-    logger = GenerationLogger(run_name, cache, transformer.tokenizer)
+    cache = ShufflingCache.from_params(buffer=8, run_name=run_name, save_every=batches_per_cache)
+    logger = GenerationLogger(run_name, cache.cache, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(
         dataset, 

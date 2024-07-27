@@ -1,7 +1,14 @@
 import torch
 import random
 
+from sache.cache import WCache
+
 class ShufflingCache():
+    @classmethod
+    def from_params(cls, buffer_size=8, *args, **kwargs):
+        cache = WCache(*args, **kwargs)
+        return ShufflingCache(cache, buffer_size)
+
     def __init__(self, cache, buffer_size=8):
         if buffer_size < 2:
             raise ValueError(f'We shuffle by maintaining a buffer of batches and passing in each batch as a random batch sized selection of the buffer. Buffer must be at least 2, got {buffer_size}')

@@ -10,6 +10,16 @@ BASE_CACHE_DIR = 'cache'
 INNER_CACHE_DIR = 'cache'
 BUCKET_NAME = 'lewington-pitsos-sache'
 
+class NoopCache():
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def append(self, activations):
+        pass
+
+    def finalize(self):
+        pass
+
 class CloudWCache():
     @classmethod
     def from_credentials(self, access_key_id, secret, *args, **kwargs):

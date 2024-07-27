@@ -4,7 +4,7 @@ import torch
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 
-from sache.cache import CloudWCache, WCache
+from sache.cache import CloudWCache, WCache, NoopCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
 from sache.shuffler import ShufflingCache
@@ -59,6 +59,24 @@ class GenerationLogger(ProcessLogger):
     def finalize(self):
         pass
 
+def build_cache(cache_type, batches_per_cache, run_name):
+    with open('.credentials.json') as f:
+        credentials = json.load(f)
+    
+    if cache_type == 'local':
+        cache = WCache(run_name, save_every=batches_per_cache)
+        shuffling_cache = ShufflingCache(cache, buffer_size=16)
+    elif cache_type == 's3':
+        cache = CloudWCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
+        shuffling_cache = ShufflingCache(cache, buffer_size=16)
+    elif cache_type == 'noop':
+        shuffling_cache = NoopCache()
+    else:
+        raise ValueError(f"unexpected cache type {cache_type}")
+
+    
+    return shuffling_cache
+
 def generate(
         run_name, 
         batches_per_cache,
@@ -70,24 +88,14 @@ def generate(
         device,
         layer,
         hook_name,
+        cache_type,
         seed=42,
-        cache_source='local'
     ):
 
     torch.manual_seed(seed)
 
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    with open('.credentials.json') as f:
-        credentials = json.load(f)
-    
-    if cache_source == 'local':
-        cache = WCache(run_name, save_every=batches_per_cache)
-    elif cache_source == 's3':
-        cache = CloudWCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
-    else:
-        raise ValueError(f"unexpected cache source {cache_source}")
-
-    shuffling_cache = ShufflingCache(cache, buffer_size=16)
+    cache = build_cache(cache_type, batches_per_cache, run_name)
     logger = GenerationLogger(run_name, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(
@@ -117,8 +125,8 @@ def generate(
             attention_mask = attention_mask.unsqueeze(-1).expand_as(activations)
             activations = torch.cat([activations, attention_mask], dim=-1)
 
-            shuffling_cache.append(activations.to('cpu'))
+            cache.append(activations.to('cpu'))
         
-    shuffling_cache.finalize()
+    cache.finalize()
 
     logger.finalize()

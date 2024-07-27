@@ -1,7 +1,10 @@
 import os
 from datasets import load_dataset
+
 from sache.generator import generate
 from sache.cache import BASE_CACHE_DIR, INNER_CACHE_DIR
+
+
 import time
 
 
@@ -21,7 +24,7 @@ def test_generate():
         device='cpu',
         layer=3,
         hook_name='blocks.2.hook_resid_post',
-        cache_source='local',
+        cache_type='local',
     )
 
     full_cache_dir = os.path.join(BASE_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)

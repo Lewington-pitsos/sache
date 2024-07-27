@@ -19,6 +19,7 @@ def chunk_and_tokenize(
     max_seq_len: int = 2048,
     return_final_batch: bool = False,
     batch_size: int = 2048,
+    override_eos_token: str = None,
 ) -> Dataset:
     """Perform GPT-style chunking and tokenization on a dataset.
 
@@ -41,9 +42,12 @@ def chunk_and_tokenize(
         The chunked and tokenized dataset.
     """
 
+    if tokenizer.eos_token is None and override_eos_token is None:
+        raise ValueError("Tokenizer must have an EOS token to use chunk_and_tokenize, or you must pass in an override")
+
     def _tokenize_fn(x: dict[str, list], leftovers: list=[]):
         chunk_size = min(tokenizer.model_max_length, max_seq_len)
-        sep = tokenizer.eos_token or "<|endoftext|>"
+        sep = tokenizer.eos_token
         joined_text = sep.join([""] + x[text_key])
         output = tokenizer(
             # Concatenate all the samples together, separated by the EOS token.

@@ -79,7 +79,7 @@ def generate(
     torch.manual_seed(seed)
 
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    cache = WCache(run_name, batch_size=batches_per_cache)
+    cache = WCache(run_name, save_every=batches_per_cache)
     logger = GenerationLogger(run_name, cache, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(

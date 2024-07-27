@@ -60,9 +60,10 @@ class CloudWCache():
         return torch.load(buffer)
 
 class WCache():
-    def __init__(self, run_name, batch_size=1, base_dir=BASE_CACHE_DIR):
-        self.batch_size = batch_size
+    def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):
+        self.batch_size = save_every
 
+        self.inner_cache_dir = os.path.join(base_dir, run_name)
         self.cache_dir = os.path.join(base_dir, run_name, INNER_CACHE_DIR)
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir, exist_ok=True)

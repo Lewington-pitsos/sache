@@ -1,7 +1,7 @@
 import os
 from datasets import load_dataset
 from sache.generator import generate
-from sache.cache import BASE_CACHE_DIR
+from sache.cache import BASE_CACHE_DIR, INNER_CACHE_DIR
 import time
 
 
@@ -9,7 +9,6 @@ def test_generate():
     dataset = load_dataset('NeelNanda/pile-10k')['train'].select(range(16))
     
     human_readable_time = 'test-' + time.strftime("%Y%m%d-%H%M%S")
-
 
     generate(
         run_name=human_readable_time,
@@ -24,7 +23,7 @@ def test_generate():
         hook_name='blocks.2.hook_resid_post',
     )
 
-    full_cache_dir = os.path.join(BASE_CACHE_DIR, human_readable_time)
+    full_cache_dir = os.path.join(BASE_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)
     cache_files = os.listdir(full_cache_dir)
     print(len(cache_files))
     assert len(cache_files) == 38

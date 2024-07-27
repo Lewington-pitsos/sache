@@ -7,6 +7,7 @@ from io import BytesIO
 
 STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
+INNER_CACHE_DIR = 'cache'
 BUCKET_NAME = 'sache'
 
 
@@ -59,10 +60,10 @@ class CloudWCache():
         return torch.load(buffer)
 
 class WCache():
-    def __init__(self, run_name, batch_size=1):
+    def __init__(self, run_name, batch_size=1, base_dir=BASE_CACHE_DIR):
         self.batch_size = batch_size
 
-        self.cache_dir = os.path.join(BASE_CACHE_DIR, run_name)
+        self.cache_dir = os.path.join(base_dir, run_name, INNER_CACHE_DIR)
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir, exist_ok=True)
 

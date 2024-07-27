@@ -28,7 +28,7 @@ class ShufflingCache(WCache):
                 super().append(self.buffer[i:i + batch_size])
             
             self.buffer = self.buffer[half:]
-    
+
     def finalize(self):
         if len(self.buffer) > 0:
             self._shuffle_buffer()

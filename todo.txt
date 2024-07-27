@@ -1,8 +1,0 @@
-- see if we actually need sae_lens for the generator
-- check sae_lens see if they do anything special for generation
-- check sae see if they do anything special for generation
-- check tokenize and concatenate for:
-    - what does it look like?
-    - how many are dropped?
-    - try prepend BOS
-- understand resid pre/post what they mean

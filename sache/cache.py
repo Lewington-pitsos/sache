@@ -10,13 +10,17 @@ BASE_CACHE_DIR = 'cache'
 INNER_CACHE_DIR = 'cache'
 BUCKET_NAME = 'sache'
 
-
 class CloudWCache():
-    def __init__(self, run_name, batch_size=1):
-        self.batch_size = batch_size
+    @classmethod
+    def from_credentials(self, access_key_id, secret, *args, **kwargs):
+        s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
+        return CloudWCache(s3_client, *args, **kwargs)
+
+    def __init__(self, s3_client, run_name, save_every=1):
+        self.batch_size = save_every
         self.run_name = run_name
         self._in_mem = []
-        self.s3_client = boto3.client('s3')
+        self.s3_client = s3_client
 
     def append(self, activations):
         self._in_mem.append(activations)
@@ -46,8 +50,7 @@ class CloudWCache():
         torch.save(activations, buffer)
         buffer.seek(0)
         
-        s3_client = boto3.client('s3')
-        s3_client.upload_fileobj(buffer, BUCKET_NAME, filename)
+        self.s3_client.upload_fileobj(buffer, BUCKET_NAME, filename)
 
         return id
 

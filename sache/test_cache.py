@@ -1,3 +1,4 @@
+import json
 from sache.cache import CloudWCache, BUCKET_NAME
 import torch
 import boto3
@@ -10,7 +11,10 @@ def file_exists_on_aws(client, bucket_name, prefix):
 @pytest.fixture
 def s3_client():
     prefix = 'test'
-    client = boto3.client('s3')
+    with open('.credentials.json') as f:
+        credentials = json.load(f)
+    
+    client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
 
     yield prefix, client
 
@@ -22,12 +26,12 @@ def s3_client():
     assert not exists_after_delete
 
 def test_cache(s3_client):
-    test_prefix,s3 = s3_client
+    test_prefix, s3 = s3_client
 
     exists_before = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
     assert not exists_before
-
-    c = CloudWCache(test_prefix, batch_size=1)
+    
+    c = CloudWCache(s3, test_prefix, save_every=1)
     activations = torch.rand(2, 16, 16) 
     id = c.append(activations)
 

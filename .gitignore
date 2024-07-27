@@ -11,3 +11,5 @@ design
 **/terraform.tfstate.backup
 
 pad.py
+
+.credentials.json

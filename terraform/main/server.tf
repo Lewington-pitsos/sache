@@ -27,7 +27,7 @@ resource "aws_security_group" "allow_ssh" {
 }
 
 resource "aws_instance" "sache" {
-  ami           = "ami-0197c13a4f68c9360" 
+  ami           = "ami-0a953348aca869e16  " 
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer.key_name
 

@@ -4,7 +4,7 @@ provider "aws" {
 
 resource "aws_key_pair" "deployer" {
   key_name   = "my-ssh-key"
-  public_key = file("~/.ssh/id_sashe.pub") # NOTE: Change this to your public key path
+  public_key = file("~/.ssh/id_sache.pub") # NOTE: Change this to your public key path
 }
 
 resource "aws_security_group" "allow_ssh" {
@@ -27,7 +27,7 @@ resource "aws_security_group" "allow_ssh" {
 }
 
 resource "aws_instance" "sache" {
-  ami           = "ami-080e1f13689e07408" 
+  ami           = "ami-0823661b4c978ae1f" 
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer.key_name
 

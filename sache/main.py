@@ -12,14 +12,13 @@ dataset = load_dataset('NeelNanda/pile-10k')['train']
 generate(
     run_name,
     dataset=dataset, 
-    batches_per_cache=2,
+    batches_per_cache=32,
     transformer_name='gpt2', 
     max_length=768, 
     batch_size=8, 
     text_column_name='text', 
     device='cuda',
-    layer=9,
+    layer=10,
     hook_name='blocks.9.hook_resid_post',
-    batches_per_cache=32
 )
 

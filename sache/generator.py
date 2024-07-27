@@ -87,7 +87,7 @@ def generate(
     else:
         raise ValueError(f"unexpected cache source {cache_source}")
 
-    shuffling_cache = ShufflingCache(cache, buffer_size=8)
+    shuffling_cache = ShufflingCache(cache, buffer_size=16)
     logger = GenerationLogger(run_name, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(

@@ -20,5 +20,6 @@ generate(
     device='cuda',
     layer=9,
     hook_name='blocks.9.hook_resid_post',
+    batches_per_cache=32
 )
 

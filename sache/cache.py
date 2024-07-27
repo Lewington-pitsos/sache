@@ -8,7 +8,7 @@ from io import BytesIO
 STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
 INNER_CACHE_DIR = 'cache'
-BUCKET_NAME = 'sache'
+BUCKET_NAME = 'lewington-pitsos-sache'
 
 class CloudWCache():
     @classmethod

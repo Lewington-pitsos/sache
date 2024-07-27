@@ -109,7 +109,7 @@ def generate(
             attention_mask = attention_mask.unsqueeze(-1).expand_as(activations)
             activations = torch.cat([activations, attention_mask], dim=-1)
 
-            cache.append(activations)
+            cache.append(activations.to('cpu'))
         
     cache.finalize()
 

@@ -17,12 +17,6 @@ class CloudWCache():
         self._in_mem = []
         self.s3_client = boto3.client('s3')
 
-    def _save_in_mem(self):
-        id = self._save(torch.cat(self._in_mem), str(uuid4()))
-        self._in_mem = []
-
-        return id
-
     def append(self, activations):
         self._in_mem.append(activations)
 
@@ -34,6 +28,12 @@ class CloudWCache():
     def finalize(self):
         if self._in_mem:
             self._save_in_mem()
+
+    def _save_in_mem(self):
+        id = self._save(torch.cat(self._in_mem), str(uuid4()))
+        self._in_mem = []
+
+        return id
 
     def _filename(self, id):
         return f'{self.run_name}/{id}.saved.pt'

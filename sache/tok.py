@@ -106,9 +106,6 @@ def chunk_and_tokenize(
 
     data = data.map(
         _tokenize_fn,
-        # Batching is important for ensuring that we don't waste tokens
-        # since we always throw away the last element of the batch we
-        # want to keep the batch size as large as possible
         batched=True,
         batch_size=batch_size,
         num_proc=num_proc,

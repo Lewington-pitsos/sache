@@ -1,3 +1,5 @@
+import threading
+import psutil
 import json
 import time
 import torch
@@ -19,14 +21,32 @@ class GenerationLogger(ProcessLogger):
         self.start_time = None
         self.sample_activations = 64
 
+        self.worker_thread = threading.Thread(target=self._log_system_usage)
+        self._keep_running = True
+        self.worker_thread.start()
+
+
+    def _log_system_usage(self):
+        while self._keep_running:
+            self.log({
+                'event': 'system_usage',
+                'torch.cuda.memory_allocated': torch.cuda.memory_allocated(0) / 1024**2,
+                'torch.cuda.memory_reserved': torch.cuda.memory_reserved(0) / 1024**2,
+                'torch.cuda.max_memory_reserved': torch.cuda.max_memory_reserved(0) / 1024**2,
+                'cpu_percent': psutil.cpu_percent(),
+            })
+            time.sleep(30)
+
     def log_batch(self, activations, attention_mask,  input_ids):
         self.n += 1
         if self.n % self.log_every == 0:
+            sequence_length = activations.shape[1]
             batch_size = activations.shape[0]
 
             sample_sequence_act = activations[0]
             log_data = {
-                'batches_processed': self.n * batch_size, 
+                'event': 'batch_processed',
+                'batches_processed': self.n, 
                 
                 'activation_shape': activations.shape, 
                 'activations_mean': activations.mean().item(), 
@@ -52,14 +72,15 @@ class GenerationLogger(ProcessLogger):
                 elapsed = current_time - self.start_time
                 self.start_time = current_time
                 log_data['seconds_since_last_log'] = elapsed
-                log_data['samples_per_second'] = self.log_every * batch_size / elapsed    
+                log_data['samples_per_second'] = self.log_every * batch_size * sequence_length  / elapsed    
 
             self.log(log_data)
 
     def finalize(self):
-        pass
+        self._keep_running = False
+        self.worker_thread.join()
 
-def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=8):
+def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=16):
     with open('.credentials.json') as f:
         credentials = json.load(f)
     
@@ -96,13 +117,29 @@ def generate(
         hook_name,
         cache_type,
         seed=42,
+        log_every=100,
     ):
 
-    torch.manual_seed(seed)
 
+    torch.manual_seed(seed)
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
+    logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)
+    logger.log({
+        'event': 'start_generating',
+        'run_name': run_name,
+        'bs_per_cache': batches_per_cache,
+        'transformer_name': transformer_name,
+        'max_length': max_length,
+        'batch_size': batch_size,
+        'text_column_name': text_column_name,
+        'device': device,
+        'layer': layer,
+        'hook_name': hook_name,
+        'cache_type': cache_type,
+        'seed': seed,
+    })
+
     cache = build_cache(cache_type, batches_per_cache, run_name)
-    logger = GenerationLogger(run_name, transformer.tokenizer)
 
     dataset = chunk_and_tokenize(
         dataset, 
@@ -111,7 +148,7 @@ def generate(
         max_seq_len=max_length,
     )
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
     transformer.eval()
     with torch.no_grad():
@@ -134,5 +171,4 @@ def generate(
             cache.append(activations.to('cpu'))
         
     cache.finalize()
-
     logger.finalize()

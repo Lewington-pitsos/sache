@@ -11,5 +11,6 @@ design
 **/terraform.tfstate.backup
 
 pad.py
+pad.ipynb
 
 .credentials.json

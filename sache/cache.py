@@ -1,9 +1,12 @@
+import threading
+import queue
 import random
 import os
 import torch
 from uuid import uuid4
 import boto3
 from io import BytesIO
+import time
 
 STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
@@ -19,6 +22,46 @@ class NoopCache():
 
     def finalize(self):
         pass
+
+
+class ThreadedCache:
+    def __init__(self, cache):
+        self.cache = cache
+        self.lock = threading.Lock()
+        self.task_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._worker)
+        self.worker_thread.start()
+
+    def _worker(self):
+        while True:
+            method, args, kwargs = self.task_queue.get()
+            if method is None:
+                break
+            acquired = self.lock.acquire(blocking=False)
+            if acquired:
+                try:
+                    method(*args, **kwargs)
+                finally:
+                    self.lock.release()
+            else:
+                self.task_queue.put((method, args, kwargs))
+            self.task_queue.task_done()
+            time.sleep(0.01)
+
+    def _run_in_thread(self, method, *args, **kwargs):
+        self.task_queue.put((method, args, kwargs))
+
+    def append(self, activations):
+        self._run_in_thread(self.cache.append, activations)
+
+    def finalize(self):
+        self.close()
+        self.cache.finalize()
+
+    def close(self):
+        self._run_in_thread(None)  # Signal the worker thread to exit
+        self.worker_thread.join()
+
 
 class CloudWCache():
     @classmethod

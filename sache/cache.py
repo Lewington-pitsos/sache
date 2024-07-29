@@ -172,6 +172,12 @@ class S3RCache():
         shutil.rmtree(self.local_cache_dir)
 
 class S3RBatchingCache(S3RCache):
+    @classmethod
+    def from_credentials(self, batch_size, access_key_id, secret, *args, **kwargs):
+        s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
+        return S3RBatchingCache(batch_size, *args, s3_client=s3_client, **kwargs)
+
+
     def __init__(self, batch_size, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.batch_size = batch_size

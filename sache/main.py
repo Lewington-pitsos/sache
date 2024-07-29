@@ -14,7 +14,7 @@ print('dataset loaded')
 
 generate(
     run_name,
-    batches_per_cache=64,
+    batches_per_cache=128,
     dataset=dataset, 
     transformer_name='gpt2', 
     max_length=1024, 

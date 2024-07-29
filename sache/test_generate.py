@@ -32,7 +32,6 @@ def test_generate():
     print(len(cache_files))
     assert len(cache_files) == 38
 
-    # remove all cache files and the cache dir
     for file in cache_files:
         os.remove(os.path.join(full_cache_dir, file))
     os.rmdir(full_cache_dir)

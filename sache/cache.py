@@ -223,14 +223,9 @@ class WCache():
             os.makedirs(self.cache_dir, exist_ok=True)
 
         self._in_mem = []
-    
 
     def n_saved(self):
         return len(os.listdir(self.cache_dir))
-
-    def _save_in_mem(self):
-        self._save(torch.cat(self._in_mem), 'saved', str(uuid4()))
-        self._in_mem = []
 
     def append(self, activations):
         self._in_mem.append(activations)
@@ -241,6 +236,11 @@ class WCache():
     def finalize(self):
         if self._in_mem:
             self._save_in_mem()
+
+
+    def _save_in_mem(self):
+        self._save(torch.cat(self._in_mem), 'saved', str(uuid4()))
+        self._in_mem = []
 
     def _filename(self, id, stage):
         return os.path.join(self.cache_dir, f'{id}.{stage}.pt')

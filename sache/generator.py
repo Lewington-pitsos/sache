@@ -37,7 +37,7 @@ class GenerationLogger(ProcessLogger):
             })
             time.sleep(30)
 
-    def log_batch(self, activations, attention_mask,  input_ids):
+    def log_batch(self, activations,  input_ids):
         self.n += 1
         if self.n % self.log_every == 0:
             sequence_length = activations.shape[1]
@@ -57,10 +57,6 @@ class GenerationLogger(ProcessLogger):
                 'sample_mean_activations': torch.mean(sample_sequence_act[:, self.sample_activations:], dim=0).tolist(),
                 'sample_max_activations': torch.max(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
                 'sample_min_activations': torch.min(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
-                
-                'sample_attention_mask': attention_mask[0][:self.sample_activations].tolist(),
-                'attention_mask_shape': attention_mask.shape,
-                'attention_mask_sum': attention_mask.sum().item(),
                 
                 'sample_plaintext': self.tokenizer.decode(input_ids[0][:self.sample_activations]),
             }
@@ -154,7 +150,6 @@ def generate(
     with torch.no_grad():
         for batch in dataloader:
             input_ids = batch['input_ids'].to(device)
-            attention_mask = torch.ones_like(input_ids) # attention mask is always 1 BUT we want to be able to save it for cases when it is not (e.g. evals)
 
             _, activations = transformer.run_with_cache(
                 input_ids, 
@@ -163,10 +158,8 @@ def generate(
             )
             activations = activations[hook_name]
 
-            logger.log_batch(activations, attention_mask, input_ids)
+            logger.log_batch(activations, input_ids)
 
-            attention_mask = attention_mask.unsqueeze(-1)
-            activations = torch.cat([activations, attention_mask], dim=1)
 
             cache.append(activations.to('cpu'))
         

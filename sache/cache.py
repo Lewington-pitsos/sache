@@ -157,6 +157,8 @@ class S3RCache():
             buffer.seek(0)
             activations = torch.load(buffer)
 
+            print(activations.shape)
+
             parent_dir = os.path.dirname(local_path)
             if not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)

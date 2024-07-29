@@ -33,12 +33,11 @@ def train(run_name, hidden_size, n_features, batch_size=32):
 
     n_batches = 10
     for i, activations in enumerate(cache):
-        print(activations.shape)
-        activations, attention_mask = activations[:, :-1], activations[:, -1]
+        activations, _, = activations[:, :, :hidden_size], activations[:, :, hidden_size]
 
-        reconstruction, _ = sae(activations) * attention_mask.unsqueeze(-1)
+        reconstruction, _ = sae(activations)
 
-        rmse = torch.sqrt(torch.mean((activations * attention_mask - reconstruction) ** 2))
+        rmse = torch.sqrt(torch.mean((activations - reconstruction) ** 2))
         
         print(rmse)
 

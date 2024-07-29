@@ -165,8 +165,8 @@ def generate(
 
             logger.log_batch(activations, attention_mask, input_ids)
 
-            attention_mask = attention_mask.unsqueeze(-1).expand_as(activations)
-            activations = torch.cat([activations, attention_mask], dim=-1)
+            attention_mask = attention_mask.unsqueeze(-1)
+            activations = torch.cat([activations, attention_mask], dim=1)
 
             cache.append(activations.to('cpu'))
         

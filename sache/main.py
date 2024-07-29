@@ -8,7 +8,7 @@ run_name = randomname.generate('adj/', 'n/')
 
 print('run_name:', run_name)
 
-dataset = load_dataset('Skylion007/openwebtext', trust_remote_code=True)['train'].select(range(1_000))
+dataset = load_dataset('Skylion007/openwebtext', trust_remote_code=True)['train'].select(range(300_000))
 
 print('dataset loaded')
 

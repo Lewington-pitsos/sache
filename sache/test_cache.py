@@ -1,7 +1,7 @@
 import time
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, S3RBatchingCache
 import torch
 import boto3
 import pytest
@@ -46,6 +46,25 @@ def test_cache(s3_client):
     loaded = c.load(id)
     assert torch.equal(activations, loaded)
 
+
+def test_batched_cache(s3_client):
+    s3_prefix, s3_client = s3_client
+    cache = S3RBatchingCache(2, 'cache/test', s3_client, s3_prefix)
+    
+    activations = torch.rand(32, 16, 9)
+
+    buffer = BytesIO()
+    torch.save(activations, buffer)
+    buffer.seek(0)
+    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.pt')
+
+    cache.sync()
+    count = 0
+    for _ in cache:
+        count += 1
+        pass
+
+    assert count == 16
 
 def test_s3_read_cache(s3_client):
     s3_prefix, s3_client = s3_client

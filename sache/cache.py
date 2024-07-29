@@ -115,7 +115,13 @@ class S3WCache():
 
         return torch.load(buffer)
 
+
 class S3RCache():
+    @classmethod
+    def from_credentials(self, access_key_id, secret, s3_prefix, local_cache_dir, *args, **kwargs):
+        s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
+        return S3RCache(local_cache_dir, s3_client, s3_prefix, *args, **kwargs)
+
     def __init__(self, local_cache_dir, s3_client, s3_prefix, bucket_name=BUCKET_NAME) -> None:
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
@@ -132,7 +138,7 @@ class S3RCache():
 
     def _list_s3_files(self):
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
-        return [obj.get('Key') for obj in response.get('Contents', [])]
+        return sorted([obj.get('Key') for obj in response.get('Contents', [])])
 
     def __iter__(self):
         self._file_index = 0
@@ -165,6 +171,40 @@ class S3RCache():
     def clear_local(self):
         shutil.rmtree(self.local_cache_dir)
 
+class S3RBatchingCache(S3RCache):
+    def __init__(self, batch_size, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.batch_size = batch_size
+        self.activations = None
+
+        self._finished = False
+
+    def __iter__(self):
+        super().__iter__()
+        self._finished = False
+        return self
+
+    def __next__(self):
+        if self._finished:
+            raise StopIteration
+
+        if self.activations is None:
+            self.activations = super().__next__()
+
+        while self.activations.shape[0] < self.batch_size:
+            try:
+                self.activations = torch.cat([self.activations, super().__next__()], dim=0)
+            except StopIteration:
+                self._finished = True
+                if self.activations.shape[0] == 0:
+                    raise StopIteration
+                return self.activations
+
+        batch = self.activations[:self.batch_size]
+
+        self.activations = self.activations[self.batch_size:]
+
+        return batch
 
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):

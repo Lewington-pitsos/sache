@@ -6,7 +6,7 @@ import torch
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 
-from sache.cache import CloudWCache, WCache, NoopCache, ThreadedCache
+from sache.cache import S3WCache, WCache, NoopCache, ThreadedCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
 from sache.shuffler import ShufflingCache
@@ -91,10 +91,10 @@ def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=1
         cache = WCache(run_name, save_every=batches_per_cache)
         shuffling_cache = ThreadedCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
     elif cache_type == 's3':
-        cache = CloudWCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
+        cache = S3WCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
         shuffling_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
     elif cache_type == 's3_threaded':
-        cache = CloudWCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
+        cache = S3WCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
         shuffling_cache = ThreadedCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
     elif cache_type == 'noop':
         shuffling_cache = NoopCache()

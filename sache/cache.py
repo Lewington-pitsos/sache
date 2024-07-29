@@ -63,11 +63,11 @@ class ThreadedCache:
         self.worker_thread.join()
 
 
-class CloudWCache():
+class S3WCache():
     @classmethod
     def from_credentials(self, access_key_id, secret, *args, **kwargs):
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
-        return CloudWCache(s3_client, *args, **kwargs)
+        return S3WCache(s3_client, *args, **kwargs)
 
     def __init__(self, s3_client, run_name, save_every=1):
         self.batch_size = save_every
@@ -114,6 +114,17 @@ class CloudWCache():
         buffer.seek(0)
 
         return torch.load(buffer)
+
+class S3RCache():
+    def __init__(self, client, prefix) -> None:
+        self.prefix = prefix
+        self.s3 = client
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopIteration
 
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):

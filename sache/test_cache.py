@@ -1,5 +1,5 @@
 import json
-from sache.cache import CloudWCache, BUCKET_NAME
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache
 import torch
 import boto3
 import pytest
@@ -31,7 +31,7 @@ def test_cache(s3_client):
     exists_before = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
     assert not exists_before
     
-    c = CloudWCache(s3, test_prefix, save_every=1)
+    c = S3WCache(s3, test_prefix, save_every=1)
     activations = torch.rand(2, 16, 16) 
     id = c.append(activations)
 
@@ -45,4 +45,14 @@ def test_cache(s3_client):
     assert torch.equal(activations, loaded)
 
 
+def test_s3_read_cache(s3_client):
+    prefix, client = s3_client
+    cache = S3RCache(client, prefix)
+
+    count = 0
+    for batch in cache:
+        count += 1
+        pass
+
+    assert count == 0
 

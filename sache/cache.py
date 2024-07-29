@@ -122,11 +122,12 @@ class S3RCache():
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
         return S3RCache(local_cache_dir, s3_client, s3_prefix, *args, **kwargs)
 
-    def __init__(self, local_cache_dir, s3_client, s3_prefix, bucket_name=BUCKET_NAME) -> None:
+    def __init__(self, local_cache_dir, s3_client, s3_prefix, bucket_name=BUCKET_NAME, device='cpu') -> None:
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
         self.local_cache_dir = local_cache_dir
         self.bucket_name = bucket_name
+        self.device = device
 
         if not os.path.exists(self.local_cache_dir):
             os.makedirs(self.local_cache_dir, exist_ok=True)
@@ -155,17 +156,15 @@ class S3RCache():
             buffer = BytesIO()
             self.s3_client.download_fileobj(self.bucket_name, s3_path, buffer)
             buffer.seek(0)
-            activations = torch.load(buffer)
+            activations = torch.load(buffer, weights_only=True, map_location=self.device)
 
-            print(activations.shape)
+            # parent_dir = os.path.dirname(local_path)
+            # if not os.path.exists(parent_dir):
+            #     os.makedirs(parent_dir, exist_ok=True)
 
-            parent_dir = os.path.dirname(local_path)
-            if not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
-
-            torch.save(activations, local_path)
+            # torch.save(activations, local_path)
         else:
-            activations = torch.load(local_path)
+            activations = torch.load(local_path, weights_only=True, map_location=self.device)
 
         self._file_index += 1
         return activations

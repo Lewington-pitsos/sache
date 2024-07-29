@@ -215,7 +215,7 @@ class S3RBatchingCache(S3RCache):
 
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):
-        self.batch_size = save_every
+        self.save_every = save_every
 
         self.inner_cache_dir = os.path.join(base_dir, run_name)
         self.cache_dir = os.path.join(base_dir, run_name, INNER_CACHE_DIR)
@@ -230,13 +230,12 @@ class WCache():
     def append(self, activations):
         self._in_mem.append(activations)
 
-        if len(self._in_mem) >= self.batch_size:
+        if len(self._in_mem) >= self.save_every:
             self._save_in_mem()
 
     def finalize(self):
         if self._in_mem:
             self._save_in_mem()
-
 
     def _save_in_mem(self):
         self._save(torch.cat(self._in_mem), 'saved', str(uuid4()))

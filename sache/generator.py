@@ -87,7 +87,7 @@ def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=1
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
         shuffling_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
-    if cache_type == 'local_threaded':
+    elif cache_type == 'local_threaded':
         cache = WCache(run_name, save_every=batches_per_cache)
         shuffling_cache = ThreadedCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
     elif cache_type == 's3':

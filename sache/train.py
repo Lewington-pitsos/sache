@@ -1,7 +1,7 @@
 import json
 import torch
 
-from sache.cache import S3RCache
+from sache.cache import S3RBatchingCache
 
 
 class SAE(torch.nn.Module):
@@ -18,9 +18,10 @@ def build_cache(run_name, max_gb=100):
     with open('.credentials.json') as f:
         credentials = json.load(f)
 
-    cache = S3RCache.from_credentials(
-        credentials['AWS_ACCESS_KEY_ID'], 
-        credentials['AWS_SECRET'], 
+    cache = S3RBatchingCache.from_credentials(
+        batch_size=32,
+        access_key_id=credentials['AWS_ACCESS_KEY_ID'], 
+        aws_secret=credentials['AWS_SECRET'], 
         local_cache_dir='cache/' + run_name, 
         s3_prefix=run_name,
         max_gb=max_gb
@@ -31,7 +32,7 @@ def train(run_name, hidden_size, n_features, epochs):
     cache = build_cache(run_name)
     sae = SAE(n_features=n_features, hidden_size=hidden_size)
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         for _, activations in cache:
             attention_mask, activations = activations[:, -1], activations[:, :-1]
 

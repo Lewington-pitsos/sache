@@ -1,6 +1,6 @@
 import threading
 import queue
-import random
+import shutil
 import os
 import torch
 from uuid import uuid4
@@ -116,15 +116,51 @@ class S3WCache():
         return torch.load(buffer)
 
 class S3RCache():
-    def __init__(self, client, prefix) -> None:
-        self.prefix = prefix
-        self.s3 = client
+    def __init__(self, local_cache_dir, s3_client, s3_prefix, bucket_name=BUCKET_NAME) -> None:
+        self.s3_prefix = s3_prefix
+        self.s3_client = s3_client
+        self.local_cache_dir = local_cache_dir
+        self.bucket_name = bucket_name
+
+        if not os.path.exists(self.local_cache_dir):
+            os.makedirs(self.local_cache_dir, exist_ok=True)
+
+    def _list_s3_files(self):
+        response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
+        return [obj.get('Key') for obj in response.get('Contents', [])]
 
     def __iter__(self):
+        self._s3_paths = self._list_s3_files()
+        self._file_index = 0
         return self
 
     def __next__(self):
-        raise StopIteration
+        if self._file_index >= len(self._s3_paths):
+            raise StopIteration
+
+        s3_path = self._s3_paths[self._file_index]
+        local_path = os.path.join(self.local_cache_dir, s3_path)
+
+        if not os.path.exists(local_path):
+            buffer = BytesIO()
+            self.s3_client.download_fileobj(self.bucket_name, s3_path, buffer)
+            buffer.seek(0)
+            activations = torch.load(buffer)
+
+            parent_dir = os.path.dirname(local_path)
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+
+            torch.save(activations, local_path)
+        else:
+            activations = torch.load(local_path)
+
+        self._file_index += 1
+        return activations
+
+    def clear_local(self):
+        shutil.rmtree(self.local_cache_dir)
+
 
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):

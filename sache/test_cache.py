@@ -1,3 +1,4 @@
+from io import BytesIO
 import json
 from sache.cache import S3WCache, BUCKET_NAME, S3RCache
 import torch
@@ -46,8 +47,8 @@ def test_cache(s3_client):
 
 
 def test_s3_read_cache(s3_client):
-    prefix, client = s3_client
-    cache = S3RCache(client, prefix)
+    s3_prefix, s3_client = s3_client
+    cache = S3RCache('cache/test', s3_client, s3_prefix)
 
     count = 0
     for batch in cache:
@@ -56,3 +57,19 @@ def test_s3_read_cache(s3_client):
 
     assert count == 0
 
+    activations = torch.rand(32, 16, 9)
+
+    buffer = BytesIO()
+    torch.save(activations, buffer)
+    buffer.seek(0)
+    
+    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.pt')
+
+
+    for batch in cache:
+        count += 1
+        pass
+
+    assert count > 0
+
+    cache.clear_local()

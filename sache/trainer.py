@@ -1,42 +1,28 @@
 import torch
-import time
 
 from sache.cache import Cache
 
-class Trainer():
-    def __init__(self, sae, cache, n_epochs):
-        self.cache = cache  
 
-        self.sae = sae
-        self.n_epochs = n_epochs
+class SAE(torch.nn.Module):
+    def __init__(self, n_features, hidden_size):
+        super(SAE, self).__init__()
+        self.enc = torch.nn.Parameter(torch.rand(hidden_size, n_features))
+        self.dec = torch.nn.Parameter(torch.rand(n_features, hidden_size))
 
+    def forward(self, x):
+        features = x @ self.enc
+        return features @ self.dec, features
 
-    def _calculate_geometric_median():
-        pass
-
-    def _process_batch(self, hidden_states, attention_mask):
-        reconstruction = self.sae.forward(hidden_states) * attention_mask.unsqueeze(-1)
-        
-        rmse = torch.sqrt(torch.mean((hidden_states * attention_mask - reconstruction) ** 2))
-        l2 = torch.sqrt(torch.mean(hidden_states ** 2))
-
-        return 
-
-    def _enough_of_a_head_start(self, cache):
-        return len(cache) > 100
-
-    def train(self):
-        while not self._enough_of_a_head_start(self.cache):
-            time.sleep(1)
-
-        for epoch in range(self.n_epochs):
-            for _, activations in self.cache:
-                attention_mask, activations = activations[:, -1], activations[:, :-1]
-                self._process_batch(activations, attention_mask)
-
-def train(cache_dir, **kwargs):
+def train(cache_dir, hidden_size, n_features, epochs):
     cache = Cache(cache_dir)
-    sae = None
-    trainer = Trainer(sae, cache, **kwargs)
-    trainer.train()
+    sae = SAE(n_features=n_features, hidden_size=hidden_size)
 
+    for epoch in epochs:
+        for _, activations in cache:
+            attention_mask, activations = activations[:, -1], activations[:, :-1]
+
+            reconstruction, _ = sae(activations) * attention_mask.unsqueeze(-1)
+
+            rmse = torch.sqrt(torch.mean((activations * attention_mask - reconstruction) ** 2))
+            
+            print(rmse)

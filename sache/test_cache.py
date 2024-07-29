@@ -1,3 +1,4 @@
+import time
 from io import BytesIO
 import json
 from sache.cache import S3WCache, BUCKET_NAME, S3RCache
@@ -62,14 +63,27 @@ def test_s3_read_cache(s3_client):
     buffer = BytesIO()
     torch.save(activations, buffer)
     buffer.seek(0)
-    
     s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.pt')
+    for batch in cache:
+        count += 1
+        pass
 
+    assert count == 0
 
+    cache.sync()
     for batch in cache:
         count += 1
         pass
 
     assert count > 0
+
+    count = 0
+    start = time.time()
+    for batch in cache:
+        count += 1
+        pass
+    end = time.time()
+    assert count > 0
+    assert end - start < 0.2, f"Time taken: {end - start}, all uploaded files should be cached locally after first read"
 
     cache.clear_local()

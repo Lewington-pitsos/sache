@@ -124,13 +124,17 @@ class S3RCache():
 
         if not os.path.exists(self.local_cache_dir):
             os.makedirs(self.local_cache_dir, exist_ok=True)
+        
+        self._s3_paths = self._list_s3_files()
+
+    def sync(self):
+        self._s3_paths = self._list_s3_files()
 
     def _list_s3_files(self):
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
         return [obj.get('Key') for obj in response.get('Contents', [])]
 
     def __iter__(self):
-        self._s3_paths = self._list_s3_files()
         self._file_index = 0
         return self
 

@@ -56,4 +56,4 @@ def train(run_name, hidden_size, n_features, device, batch_size=32):
             break
 
 if __name__ == '__main__':
-    train('thundering-barracuda', 768, 384, device='cuda', batch_size=256)
+    train('active-camera', 768, 384, device='cuda', batch_size=256)

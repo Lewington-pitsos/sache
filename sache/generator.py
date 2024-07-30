@@ -116,7 +116,6 @@ def generate(
         log_every=100,
     ):
 
-
     torch.manual_seed(seed)
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
     logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)

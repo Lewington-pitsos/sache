@@ -115,6 +115,9 @@ class S3WCache():
 
         return torch.load(buffer)
 
+class RCache():
+    def __init__(self, local_cache_dir, device):
+        self.local_cache_dir = local_cache_dir
 
 class S3RCache():
     @classmethod
@@ -157,12 +160,6 @@ class S3RCache():
             self.s3_client.download_fileobj(self.bucket_name, s3_path, buffer)
             buffer.seek(0)
             activations = torch.load(buffer, weights_only=True, map_location=self.device)
-
-            # parent_dir = os.path.dirname(local_path)
-            # if not os.path.exists(parent_dir):
-            #     os.makedirs(parent_dir, exist_ok=True)
-
-            # torch.save(activations, local_path)
         else:
             activations = torch.load(local_path, weights_only=True, map_location=self.device)
 
@@ -217,8 +214,8 @@ class WCache():
     def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):
         self.save_every = save_every
 
-        self.inner_cache_dir = os.path.join(base_dir, run_name)
-        self.cache_dir = os.path.join(base_dir, run_name, INNER_CACHE_DIR)
+        self.outer_cache_dir = os.path.join(base_dir, run_name)
+        self.cache_dir = os.path.join(self.outer_cache_dir, INNER_CACHE_DIR)
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir, exist_ok=True)
 

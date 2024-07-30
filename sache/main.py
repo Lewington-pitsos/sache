@@ -8,7 +8,7 @@ run_name = randomname.generate('adj/', 'n/')
 
 print('run_name:', run_name)
 
-dataset = load_dataset('Skylion007/openwebtext', trust_remote_code=True)['train'].select(range(300_000))
+dataset = load_dataset('Skylion007/openwebtext', trust_remote_code=True)['train'].select(range(320_000))
 
 print('dataset loaded')
 
@@ -21,9 +21,9 @@ generate(
     batch_size=8, 
     text_column_name='text', 
     device='cuda',
-    layer=10,
+    layer=11,
     cache_type='local_threaded',
-    hook_name='blocks.9.hook_resid_post',
-    log_every=10
+    hook_name='blocks.10.hook_resid_post',
+    log_every=100
 )
 

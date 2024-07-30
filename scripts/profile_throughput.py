@@ -49,12 +49,11 @@ read_throughput = tensor_size * num_reads / read_time / (1024 ** 3)  # GB/s
 print(f"Read Time: {read_time:.2f} seconds")
 print(f"Read Throughput (concurrent reads): {read_throughput:.2f} GB/s")
 
+# macbook
+# Read Time: 14.29 seconds
+# Read Throughput (concurrent reads): 1.40 GB/s
 
-# Write Time: 5.84 seconds
-# Write Throughput: 0.86 GB/s
-# Read Time: 3.93 seconds
-# Read Throughput: 1.27 GB/s
-
+# io2
 # Write Time: 15.20 seconds
 # Write Throughput: 0.33 GB/s
 # Read Time: 5.03 seconds

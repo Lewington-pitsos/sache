@@ -15,7 +15,7 @@ def shuffling_cache():
 
     yield ShufflingCache(cache, buffer_size=4)
 
-    shutil.rmtree(cache.inner_cache_dir)
+    shutil.rmtree(cache.outer_cache_dir)
 
 def test_threaded_shuffling_cache(shuffling_cache):
     torch.manual_seed(0)

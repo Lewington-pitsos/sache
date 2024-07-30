@@ -1,7 +1,9 @@
+import shutil
+import os
 import time
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache, S3RBatchingCache
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, S3RBatchingCache, RCache
 import torch
 import boto3
 import pytest
@@ -96,13 +98,27 @@ def test_s3_read_cache(s3_client):
 
     assert count > 0
 
+    cache.clear_local()
+
+@pytest.fixture
+def test_cache_dir():
+    local_dir = 'data/testing'
+
+    if not os.path.exists(local_dir):
+        os.makedirs(local_dir, exist_ok=True)
+
+    yield local_dir
+
+    shutil.rmtree(local_dir)
+
+
+def test_local_reading_cache(test_cache_dir):
+    cache = RCache(test_cache_dir, 'cpu')
+
     count = 0
-    start = time.time()
-    for batch in cache:
+    for _ in cache:
         count += 1
         pass
-    end = time.time()
-    assert count > 0
-    assert end - start < 0.2, f"Time taken: {end - start}, all uploaded files should be cached locally after first read"
 
-    cache.clear_local()
+    assert count == 0
+

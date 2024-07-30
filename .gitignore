@@ -5,6 +5,7 @@ testing
 log
 cache
 design
+cruft
 
 **/*.terraform*
 **/terraform.tfstate

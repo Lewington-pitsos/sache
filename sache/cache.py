@@ -118,6 +118,13 @@ class S3WCache():
 class RCache():
     def __init__(self, local_cache_dir, device):
         self.local_cache_dir = local_cache_dir
+        self.device = device
+
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        raise StopIteration
 
 class S3RCache():
     @classmethod

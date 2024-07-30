@@ -2,7 +2,7 @@ import os
 from datasets import load_dataset
 
 from sache.generator import generate
-from sache.cache import BASE_CACHE_DIR, INNER_CACHE_DIR
+from sache.cache import OUTER_CACHE_DIR, INNER_CACHE_DIR
 
 
 import time
@@ -27,7 +27,7 @@ def test_generate():
         cache_type='local',
     )
 
-    full_cache_dir = os.path.join(BASE_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)
+    full_cache_dir = os.path.join(OUTER_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)
     cache_files = os.listdir(full_cache_dir)
     print(len(cache_files))
     assert len(cache_files) == 38

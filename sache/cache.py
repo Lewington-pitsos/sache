@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
 STAGES = ['saved', 'shuffled']
-BASE_CACHE_DIR = 'cache'
+OUTER_CACHE_DIR = 'cache'
 INNER_CACHE_DIR = 'cache'
 BUCKET_NAME = 'lewington-pitsos-sache'
 
@@ -269,7 +269,7 @@ class RBatchingCache():
         return batch
 
 class WCache():
-    def __init__(self, run_name, save_every=1, base_dir=BASE_CACHE_DIR):
+    def __init__(self, run_name, save_every=1, base_dir=OUTER_CACHE_DIR):
         self.save_every = save_every
 
         self.outer_cache_dir = os.path.join(base_dir, run_name)

@@ -1,12 +1,14 @@
 import threading
 import queue
-import shutil
 import os
 import torch
 from uuid import uuid4
 import boto3
 from io import BytesIO
 import time
+from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 
 STAGES = ['saved', 'shuffled']
 BASE_CACHE_DIR = 'cache'
@@ -116,29 +118,70 @@ class S3WCache():
         return torch.load(buffer)
 
 class RCache():
-    def __init__(self, local_cache_dir, device):
+    def __init__(self, local_cache_dir, device, buffer_size=10, num_workers=4):
         self.cache_dir = local_cache_dir
         self.device = device
+        self.num_workers = num_workers
+        self.buffer_size = buffer_size
+        self.num_workers = num_workers
 
-        self.files = os.listdir(self.cache_dir)
-
+        self.executor = None
+        self.buffer_filler_thread = None
+        self.stop_filling = False
+        self.sync()
+    
     def sync(self):
+        self.stop_filling = True
+        if self.executor is not None:
+            self.executor.shutdown(wait=True)
+        if self.buffer_filler_thread is not None:
+            self.buffer_filler_thread.join()
+
         self.files = os.listdir(self.cache_dir)
+        self._file_idx = 0
+        self.buffer = Queue(maxsize=self.buffer_size)
+        self.executor = ThreadPoolExecutor(max_workers=self.num_workers)
+        self.stop_filling = False
+        self.buffer_filler_thread = Thread(target=self._fill_buffer)
+        self.buffer_filler_thread.start()
+
+    def _fill_buffer(self):
+        while self._file_idx < len(self.files) and not self.stop_filling:
+            if self.buffer.full():
+                time.sleep(0.1)
+            else:
+                self.executor.submit(self._load_file, self._file_idx)
+                self._file_idx += 1
+
+    def _load_file(self, idx):
+        if idx < len(self.files):
+            filename = os.path.join(self.cache_dir, self.files[idx])
+            activations = torch.load(filename, weights_only=True, map_location=self.device)
+            self.buffer.put(activations)
 
     def __iter__(self):
-        self._file_idx = 0
         return self
-    
+
     def __next__(self):
-        if self._file_idx >= len(self.files):
+        if self.buffer.empty() and self._file_idx >= len(self.files):
+            if self.executor is not None:
+                self.executor.shutdown(wait=True) 
+                self.executor = None
+            self.stop_filling = True
+            if self.buffer_filler_thread is not None:
+                self.buffer_filler_thread.join()
+                self.buffer_filler_thread = None
             raise StopIteration
-        
-        filename = os.path.join(self.cache_dir, self.files[self._file_idx])
-        activations = torch.load(filename, weights_only=True, map_location=self.device)
 
-        self._file_idx += 1
+        return self.buffer.get(block=True)
+    
+    def __del__(self):
+        if self.executor is not None:
+            self.executor.shutdown(wait=False)
+        self.stop_filling = True
+        if self.buffer_filler_thread is not None:
+            self.buffer_filler_thread.join()
 
-        return activations
 
 class S3RCache():
     @classmethod

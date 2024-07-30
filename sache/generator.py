@@ -68,7 +68,7 @@ class GenerationLogger(ProcessLogger):
                 elapsed = current_time - self.start_time
                 self.start_time = current_time
                 log_data['seconds_since_last_log'] = elapsed
-                log_data['samples_per_second'] = self.log_every * batch_size * sequence_length  / elapsed    
+                log_data['tokens_per_second'] = self.log_every * batch_size * sequence_length  / elapsed    
 
             self.log(log_data)
 

@@ -12,7 +12,7 @@ from sache.cache import RCache
 data_dir = 'cruft/rcache_test'
 
 if not os.path.exists(data_dir):
-    os.mkdir(data_dir)
+    os.makedirs(data_dir)
 
 n_files = 8
 gb = 3

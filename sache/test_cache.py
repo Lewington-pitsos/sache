@@ -130,7 +130,10 @@ def test_local_reading_cache(test_cache_dir):
     assert count == 0
 
     cache.sync()
-    for _ in cache:
+    for batch in cache:
         count += 1
         pass
     assert count >= 0
+    assert torch.equal(activations, batch)
+
+    

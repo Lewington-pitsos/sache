@@ -1,9 +1,8 @@
 import shutil
 import os
-import time
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache, S3RBatchingCache, RCache, INNER_CACHE_DIR
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache, RCache
 import torch
 import boto3
 import pytest
@@ -29,6 +28,19 @@ def s3_client():
     exists_after_delete = file_exists_on_aws(client, BUCKET_NAME, prefix)
     assert not exists_after_delete
 
+
+@pytest.fixture
+def test_cache_dir():
+    local_dir = 'data/testing'
+
+    if not os.path.exists(local_dir):
+        os.makedirs(local_dir, exist_ok=True)
+
+    yield local_dir
+
+    shutil.rmtree(local_dir)
+
+
 def test_cache(s3_client):
     test_prefix, s3 = s3_client
 
@@ -49,9 +61,10 @@ def test_cache(s3_client):
     assert torch.equal(activations, loaded)
 
 
-def test_batched_cache(s3_client):
+def test_batched_cache(s3_client, test_cache_dir):
     s3_prefix, s3_client = s3_client
-    cache = S3RBatchingCache(2, 'cache/test', s3_client, s3_prefix)
+    inner_cache = S3RCache(test_cache_dir, s3_client, s3_prefix)
+    cache = RBatchingCache(inner_cache, 2)
     
     activations = torch.rand(32, 16, 9)
 
@@ -68,9 +81,9 @@ def test_batched_cache(s3_client):
 
     assert count == 16
 
-def test_s3_read_cache(s3_client):
+def test_s3_read_cache(s3_client, test_cache_dir):
     s3_prefix, s3_client = s3_client
-    cache = S3RCache('cache/test', s3_client, s3_prefix)
+    cache = S3RCache(test_cache_dir, s3_client, s3_prefix)
 
     count = 0
     for batch in cache:
@@ -98,20 +111,6 @@ def test_s3_read_cache(s3_client):
 
     assert count > 0
 
-    cache.clear_local()
-
-@pytest.fixture
-def test_cache_dir():
-    local_dir = 'data/testing'
-
-    if not os.path.exists(local_dir):
-        os.makedirs(local_dir, exist_ok=True)
-
-    yield local_dir
-
-    shutil.rmtree(local_dir)
-
-
 def test_local_reading_cache(test_cache_dir):
     cache = RCache(test_cache_dir, 'cpu')
 
@@ -136,4 +135,17 @@ def test_local_reading_cache(test_cache_dir):
     assert count >= 0
     assert torch.equal(activations, batch)
 
-    
+def test_local_read_batching(test_cache_dir):
+    inner_cache = RCache(test_cache_dir, 'cpu')
+    cache = RBatchingCache(inner_cache, 2)
+
+    activations = torch.rand(32, 16, 9)
+    torch.save(activations, os.path.join(test_cache_dir, 'a.pt'))
+
+    cache.sync()
+    count = 0
+    for _ in cache:
+        count += 1
+        pass
+
+    assert count == 16

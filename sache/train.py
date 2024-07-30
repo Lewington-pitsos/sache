@@ -2,7 +2,7 @@ import json
 import torch
 from tqdm import tqdm
 
-from sache.cache import S3RBatchingCache
+from sache.cache import RBatchingCache, S3RCache
 from sache.log import ProcessLogger
 
 class SAE(torch.nn.Module):
@@ -20,14 +20,14 @@ def build_cache(run_name, batch_size, device):
     with open('.credentials.json') as f:
         credentials = json.load(f)
 
-    cache = S3RBatchingCache.from_credentials(
-        batch_size=batch_size,
+    inner_cache = S3RCache.from_credentials(
         access_key_id=credentials['AWS_ACCESS_KEY_ID'], 
         secret=credentials['AWS_SECRET'], 
         local_cache_dir='cache/' + run_name, 
         s3_prefix=run_name + '/',
         device=device
     )
+    cache = RBatchingCache(cache=inner_cache, batch_size=batch_size)
     return cache
 
 def train(run_name, hidden_size, n_features, device, batch_size=32):

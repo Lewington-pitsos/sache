@@ -187,25 +187,19 @@ class S3RCache():
         self._file_index += 1
         return activations
 
-    def clear_local(self):
-        shutil.rmtree(self.local_cache_dir)
-
-class S3RBatchingCache(S3RCache):
-    @classmethod
-    def from_credentials(self, batch_size, access_key_id, secret, *args, **kwargs):
-        s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
-        return S3RBatchingCache(batch_size, *args, s3_client=s3_client, **kwargs)
-
-
-    def __init__(self, batch_size, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+class RBatchingCache():
+    def __init__(self, cache, batch_size) -> None:
+        self.cache = cache
         self.batch_size = batch_size
         self.activations = None
 
         self._finished = False
 
+    def sync(self):
+        self.cache.sync()
+
     def __iter__(self):
-        super().__iter__()
+        self.cache.__iter__()
         self._finished = False
         return self
 
@@ -214,11 +208,11 @@ class S3RBatchingCache(S3RCache):
             raise StopIteration
 
         if self.activations is None:
-            self.activations = super().__next__()
+            self.activations = next(self.cache)
 
         while self.activations.shape[0] < self.batch_size:
             try:
-                self.activations = torch.cat([self.activations, super().__next__()], dim=0)
+                self.activations = torch.cat([self.activations, next(self.cache)], dim=0)
             except StopIteration:
                 self._finished = True
                 if self.activations.shape[0] == 0:

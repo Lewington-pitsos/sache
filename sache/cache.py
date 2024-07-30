@@ -117,14 +117,28 @@ class S3WCache():
 
 class RCache():
     def __init__(self, local_cache_dir, device):
-        self.local_cache_dir = local_cache_dir
+        self.cache_dir = local_cache_dir
         self.device = device
 
+        self.files = os.listdir(self.cache_dir)
+
+    def sync(self):
+        self.files = os.listdir(self.cache_dir)
+
     def __iter__(self):
+        self._file_idx = 0
         return self
     
     def __next__(self):
-        raise StopIteration
+        if self._file_idx >= len(self.files):
+            raise StopIteration
+        
+        filename = os.path.join(self.cache_dir, self.files[self._file_idx])
+        activations = torch.load(filename, weights_only=True, map_location=self.device)
+
+        self._file_idx += 1
+
+        return activations
 
 class S3RCache():
     @classmethod

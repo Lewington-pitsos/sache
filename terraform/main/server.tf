@@ -38,8 +38,6 @@ resource "aws_instance" "sache" {
   }
 
   root_block_device {
-    volume_size = 1500
-    volume_type = "io2"
-    iops        = 16000
+    volume_size = 400
   }
 }

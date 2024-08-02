@@ -23,9 +23,16 @@ def upload_tensor_to_s3(bucket_name, tensor, s3_key):
     print(tensor.shape)
     print(tensor[:4, :4])
     tensor_bytes = tensor.numpy().tobytes()
+    print(len(tensor_bytes))
     
     try:
-        s3_client.put_object(Bucket=bucket_name, Key=s3_key, Body=tensor_bytes)
+        s3_client.put_object(
+            Bucket=bucket_name, 
+            Key=s3_key, 
+            Body=tensor_bytes, 
+            ContentLength=len(tensor_bytes),
+            ContentType='application/octet-stream'
+        )
         print(f"Uploaded tensor to s3://{bucket_name}/{s3_key}")
     except Exception as e:
         print(f"Error uploading tensor: {e}")
@@ -33,7 +40,7 @@ def upload_tensor_to_s3(bucket_name, tensor, s3_key):
 def main():
     bucket_name = BUCKET_NAME
 
-    for i in range(1):
+    for i in range(1, 6):
         tensor = generate_random_tensor(5) 
 
         s3_key = f'tensors/bytes_{i}.pt'

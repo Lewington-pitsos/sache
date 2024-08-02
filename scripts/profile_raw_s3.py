@@ -20,6 +20,7 @@ async def request_chunk(session, url, start, end):
 
 async def download_chunks(session, url, total_size, chunk_size, n_threads):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
+    print(len(chunks))
 
     tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
     results = await asyncio.gather(*tasks)
@@ -34,9 +35,9 @@ MB = KB * KB
 # thread_numbers = [4, 8, 16, 32, 64]
 # total_sizes = [MB * 512, MB * 1024, MB * 2048, MB * 4096]
 
-chunk_sizes = [MB * 16] * 5
+chunk_sizes = [MB * 8] * 4
 thread_numbers = [32]
-total_sizes = [5368710352]
+total_sizes = [5368709120]
 
 stats = []
 
@@ -47,6 +48,21 @@ class Reader():
         self.stop_reading = False
         self.reading_thread.start()
 
+    def _to_tensor(self):
+        responses = self.queue.pop()
+        # sorted_responses = sorted(responses, key=lambda x: x[0])
+        # combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
+
+        # make combined_bytes writable
+
+        # combined_bytes = bytearray(combined_bytes)
+
+        # t = torch.frombuffer(combined_bytes, dtype=torch.float32)
+        # t = t.reshape(1280, 1024 * 1024)
+        
+        # print(t[:4, :4])
+        # print(t.shape) 
+
     def _read(self):
         while True:
             if self.stop_reading:
@@ -54,32 +70,16 @@ class Reader():
             if len(self.queue) == 0:
                 time.sleep(0.05)
             else:
-                responses = self.queue.pop()
-                sorted_responses = sorted(responses, key=lambda x: x[0])
-                combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
-
-
-
-                n = np.frombuffer(combined_bytes, dtype=np.float32)
-                reshaped = n.reshape(1280, 1024 * 1024)
-
-                t = torch.from_numpy(reshaped)
-
-                
-                t = torch.frombuffer(combined_bytes, dtype=torch.float32)
-                print(t.shape)
-                t = t.reshape(1280, 1024 * 1024)
-                print(t.shape) 
-
-                # t = torch.load(, map_location='cuda')
+                self._to_tensor()
 
     def stop(self):
         self.stop_reading = True
         self.reading_thread.join()
+
         
 
 async def main():
-    i = 0
+    i = 1
     run_name = randomname.generate('adj/', 'n/')
 
     print('run_name:', run_name)

@@ -33,8 +33,8 @@ def upload_tensor_to_s3(bucket_name, tensor, s3_key):
 def main():
     bucket_name = BUCKET_NAME
 
-    for i in range(10):
-        tensor = generate_random_tensor(10)  # 5 GB each
+    for i in range(16):
+        tensor = generate_random_tensor(5) 
 
         s3_key = f'tensors/tensor_{i}.pt'
         upload_tensor_to_s3(bucket_name, tensor, s3_key)

@@ -6,6 +6,7 @@ import logging
 import sys
 import os
 import json
+import threading
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,7 +51,32 @@ def download_file(s3_client, key, bucket_name):
     # Log the download speed
     logging.info(f'Downloaded {key} from {bucket_name}: {download_speed_mbps:.2f} MB/s')
 
-    return file_size_mb, elapsed_time
+    return file_size_mb, elapsed_time, buffer
+
+
+class Reader():
+    def __init__(self):
+        self.responses = []
+        self.reading_thread = threading.Thread(target=self._read)
+        self.stop_reading = False
+        self.reading_thread.start()
+
+    def _read(self):
+        while True:
+            if self.stop_reading:
+                break
+            if len(self.responses) == 0:
+                time.sleep(0.05)
+            else:
+                for buffer in self.responses:
+                    buffer.seek(0)
+                    buffer.read()
+                self.responses = []
+
+    def stop(self):
+        self.stop_reading = True
+        self.reading_thread.join()
+        
 
 def main(n_files, num_threads):
     # List of S3 file paths (bucket_name/key)
@@ -58,10 +84,13 @@ def main(n_files, num_threads):
 
     total_size_mb = 0
     total_time_sec = 0
-    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
-
+    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'], use_ssl=False)
+    
+    r = Reader()
     for key in s3_files:
-        file_size_mb, elapsed_time = download_file(s3_client, key, BUCKET_NAME)
+        file_size_mb, elapsed_time, buffer = download_file(s3_client, key, BUCKET_NAME)
+
+        r.responses.append(buffer)
 
         total_size_mb += file_size_mb
         total_time_sec += elapsed_time
@@ -73,8 +102,9 @@ def main(n_files, num_threads):
         print(f'Total download speed: {total_download_speed_mbps:.2f} MB/s')
     else:
         print('Total time is zero, cannot calculate download speed.')
+    r.stop()
 
 if __name__ == '__main__':
-    n_files = 1
+    n_files = 2
     num_threads = 1
     main(n_files, num_threads)

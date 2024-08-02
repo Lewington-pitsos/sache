@@ -5,6 +5,8 @@ import asyncio
 import aiohttp
 import randomname
 import random
+import threading
+
 
 async def request_chunk(session, url, start, end):
     headers = {
@@ -35,12 +37,36 @@ total_sizes = [MB * 4096]
 
 stats = []
 
+class Reader():
+    def __init__(self):
+        self.responses = []
+        self.reading_thread = threading.Thread(target=self._read)
+        self.stop_reading = False
+        self.reading_thread.start()
+
+    def _read(self):
+        while True:
+            if self.stop_reading:
+                break
+            if len(self.responses) == 0:
+                time.sleep(0.05)
+            else:
+                for response in self.responses:
+                    pass
+                self.responses = []
+
+    def stop(self):
+        self.stop_reading = True
+        self.reading_thread.join()
+        
+
 async def main():
     i = 0
     run_name = randomname.generate('adj/', 'n/')
 
     print('run_name:', run_name)
 
+    r = Reader()
     connector = aiohttp.TCPConnector(limit=max(thread_numbers))
     async with aiohttp.ClientSession(connector=connector) as session:
         for chunk_size in chunk_sizes:
@@ -51,6 +77,7 @@ async def main():
                     url = f'http://lewington-pitsos-sache.s3.amazonaws.com/tensors/tensor_{i}.pt'
 
                     results = await download_chunks(session, url, total_size, chunk_size, n_threads)
+                    r.responses.extend(results)
 
                     end = time.time()
 
@@ -73,6 +100,8 @@ async def main():
                     i += 1
                     if i > 15:
                         break
+
+    r.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())

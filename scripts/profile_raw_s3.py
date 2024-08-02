@@ -7,9 +7,7 @@ import time
 import asyncio
 import aiohttp
 import randomname
-import random
 import threading
-
 
 async def request_chunk(session, url, start, end):
     headers = {
@@ -20,7 +18,6 @@ async def request_chunk(session, url, start, end):
 
 async def download_chunks(session, url, total_size, chunk_size, n_threads):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
-    print(len(chunks))
 
     tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
     results = await asyncio.gather(*tasks)
@@ -35,9 +32,10 @@ MB = KB * KB
 # thread_numbers = [4, 8, 16, 32, 64]
 # total_sizes = [MB * 512, MB * 1024, MB * 2048, MB * 4096]
 
-chunk_sizes = [MB * 8] * 4
+chunk_sizes = [MB * 16] * 8
 thread_numbers = [32]
-total_sizes = [5368709120]
+# total_sizes = [5368709120]
+total_sizes = [5368710352]
 
 stats = []
 
@@ -50,8 +48,12 @@ class Reader():
 
     def _to_tensor(self):
         responses = self.queue.pop()
-        # sorted_responses = sorted(responses, key=lambda x: x[0])
-        # combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
+        sorted_responses = sorted(responses, key=lambda x: x[0])
+        combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
+
+        # buffer = io.BytesIO(combined_bytes)
+        # t = torch.load(buffer, map_location='cuda')
+        # print(t.shape)
 
         # make combined_bytes writable
 
@@ -79,7 +81,7 @@ class Reader():
         
 
 async def main():
-    i = 1
+    i = 0
     run_name = randomname.generate('adj/', 'n/')
 
     print('run_name:', run_name)
@@ -92,7 +94,7 @@ async def main():
                 for total_size in total_sizes:
                     start = time.time()
 
-                    url = f'http://lewington-pitsos-sache.s3.amazonaws.com/tensors/tensor_{i}.pt'
+                    url = f'http://lewington-pitsos-sache.s3.amazonaws.com/tensors/bytes_{i}.pt'
 
                     # get total size of url
 

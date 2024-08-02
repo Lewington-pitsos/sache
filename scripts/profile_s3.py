@@ -29,7 +29,7 @@ def download_file(s3_client, key, bucket_name):
     cfg=TransferConfig(
         # use_threads=False,
         # multipart_threshold = 16 * MB, # the threshold of file size above which we do a multipart download
-        # max_concurrency = 16, # number of threads????
+        max_concurrency = 64, # number of threads????
         # multipart_chunksize = 8 * MB, # the amount of bytes to request from s3 in each "part" of a multipart download
         # max_io_queue = 100000000,
         # io_chunksize = 8 * MB,
@@ -108,6 +108,6 @@ def main(n_files, num_threads):
     r.stop()
 
 if __name__ == '__main__':
-    n_files = 4
+    n_files = 2
     num_threads = 1
     main(n_files, num_threads)

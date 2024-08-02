@@ -1,4 +1,7 @@
+import numpy as np
+import torch
 import io
+import pickle
 import json
 import time
 import asyncio
@@ -13,7 +16,7 @@ async def request_chunk(session, url, start, end):
         "Range": f"bytes={start}-{end}",
     }
     async with session.get(url, headers=headers) as response:
-        return await response.read()
+        return start, await response.read()
 
 async def download_chunks(session, url, total_size, chunk_size, n_threads):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
@@ -31,15 +34,15 @@ MB = KB * KB
 # thread_numbers = [4, 8, 16, 32, 64]
 # total_sizes = [MB * 512, MB * 1024, MB * 2048, MB * 4096]
 
-chunk_sizes = [MB * 16] * 16
+chunk_sizes = [MB * 16] * 5
 thread_numbers = [32]
-total_sizes = [MB * 4096]
+total_sizes = [5368710352]
 
 stats = []
 
 class Reader():
     def __init__(self):
-        self.responses = []
+        self.queue = []
         self.reading_thread = threading.Thread(target=self._read)
         self.stop_reading = False
         self.reading_thread.start()
@@ -48,12 +51,27 @@ class Reader():
         while True:
             if self.stop_reading:
                 break
-            if len(self.responses) == 0:
+            if len(self.queue) == 0:
                 time.sleep(0.05)
             else:
-                for response in self.responses:
-                    pass
-                self.responses = []
+                responses = self.queue.pop()
+                sorted_responses = sorted(responses, key=lambda x: x[0])
+                combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
+
+
+
+                n = np.frombuffer(combined_bytes, dtype=np.float32)
+                reshaped = n.reshape(1280, 1024 * 1024)
+
+                t = torch.from_numpy(reshaped)
+
+                
+                t = torch.frombuffer(combined_bytes, dtype=torch.float32)
+                print(t.shape)
+                t = t.reshape(1280, 1024 * 1024)
+                print(t.shape) 
+
+                # t = torch.load(, map_location='cuda')
 
     def stop(self):
         self.stop_reading = True
@@ -76,8 +94,14 @@ async def main():
 
                     url = f'http://lewington-pitsos-sache.s3.amazonaws.com/tensors/tensor_{i}.pt'
 
+                    # get total size of url
+
+                    # response = await session.head(url)
+                    # total_size = int(response.headers['Content-Length'])
+                    # print('total_size:', total_size)
+
                     results = await download_chunks(session, url, total_size, chunk_size, n_threads)
-                    r.responses.extend(results)
+                    r.queue.append(results)
 
                     end = time.time()
 

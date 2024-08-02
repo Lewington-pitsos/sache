@@ -1,3 +1,4 @@
+import torch
 import boto3
 from boto3.s3.transfer import TransferConfig
 import io
@@ -27,13 +28,13 @@ def download_file(s3_client, key, bucket_name):
     buffer = io.BytesIO()
     cfg=TransferConfig(
         # use_threads=False,
-        multipart_threshold = 16 * MB, # the threshold of file size above which we do a multipart download
-        max_concurrency = 30, # number of threads????
-        multipart_chunksize = 8 * MB, # the amount of bytes to request from s3 in each "part" of a multipart download
-        max_io_queue = 100000000,
-        io_chunksize = 8 * MB,
+        # multipart_threshold = 16 * MB, # the threshold of file size above which we do a multipart download
+        # max_concurrency = 16, # number of threads????
+        # multipart_chunksize = 8 * MB, # the amount of bytes to request from s3 in each "part" of a multipart download
+        # max_io_queue = 100000000,
+        # io_chunksize = 8 * MB,
     )
-    cfg.max_in_memory_download_chunks = 100
+    # cfg.max_in_memory_download_chunks = 100
     s3_client.download_fileobj(
         bucket_name, 
         key, 
@@ -68,9 +69,11 @@ class Reader():
             if len(self.responses) == 0:
                 time.sleep(0.05)
             else:
-                for buffer in self.responses:
-                    buffer.seek(0)
-                    buffer.read()
+                while len(self.responses) > 0:
+                    buffer = self.responses.pop()
+                    # buffer.seek(0)
+                    # t = torch.load(buffer, map_location='cuda')
+
                 self.responses = []
 
     def stop(self):
@@ -105,6 +108,6 @@ def main(n_files, num_threads):
     r.stop()
 
 if __name__ == '__main__':
-    n_files = 2
+    n_files = 4
     num_threads = 1
     main(n_files, num_threads)

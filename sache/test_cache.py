@@ -60,7 +60,6 @@ def test_cache(s3_client):
     loaded = c.load(id)
     assert torch.equal(activations, loaded)
 
-
 def test_batched_cache(s3_client, test_cache_dir):
     s3_prefix, s3_client = s3_client
     inner_cache = S3RCache(test_cache_dir, s3_client, s3_prefix)

@@ -1,7 +1,4 @@
-import numpy as np
 import torch
-import io
-import pickle
 import warnings
 import json
 import time
@@ -24,7 +21,7 @@ async def request_chunk(session, url, start, end):
     async with session.get(url, headers=headers) as response:
         return start, await response.read()
 
-async def download_chunks(session, url, total_size, chunk_size, n_threads):
+async def download_chunks(session, url, total_size, chunk_size):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
 
     tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
@@ -39,7 +36,7 @@ MB = KB * KB
 # total_sizes = [MB * 512, MB * 1024, MB * 2048, MB * 4096]
 
 chunk_sizes = [MB * 16] * 8
-thread_numbers = [32]
+concurrency = [128]
 total_sizes = [5368709120]
 # total_sizes = [5368710352]
 
@@ -50,8 +47,8 @@ class Reader():
         self.queue = []
         self.reading_thread = threading.Thread(target=self._read)
         self.stop_reading = False
-        self.sae = SAE(n_features=768, hidden_size=1024, device='cuda')
-        self.optimizer = torch.optim.Adam(self.sae.parameters(), lr=1e-3)
+        # self.sae = SAE(n_features=768, hidden_size=1024, device='cuda')
+        # self.optimizer = torch.optim.Adam(self.sae.parameters(), lr=1e-3)
 
 
         self.reading_thread.start()
@@ -61,19 +58,19 @@ class Reader():
         sorted_responses = sorted(responses, key=lambda x: x[0])
         combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t = torch.frombuffer(combined_bytes, dtype=torch.float32).to('cuda')
-        t = t.reshape(1280, 1024, 1024)
+        # with warnings.catch_warnings():
+        #     warnings.simplefilter("ignore")
+        #     t = torch.frombuffer(combined_bytes, dtype=torch.float32).to('cuda')
+        # t = t.reshape(1280, 1024, 1024)
 
-        for i in range(0, 1280, 64):
-            self.optimizer.zero_grad()
-            batch = t[i:i+64]
+        # for i in range(0, 1280, 64):
+        #     self.optimizer.zero_grad()
+        #     batch = t[i:i+64]
 
-            reconstruction, _ = self.sae(batch)
-            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            rmse.backward()
-            self.optimizer.step()
+        #     reconstruction, _ = self.sae(batch)
+        #     rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
+        #     rmse.backward()
+        #     self.optimizer.step()
 
     def _read(self):
         while True:
@@ -97,10 +94,10 @@ async def main():
     print('run_name:', run_name)
 
     r = Reader()
-    connector = aiohttp.TCPConnector(limit=max(thread_numbers))
+    connector = aiohttp.TCPConnector(limit=max(concurrency))
     async with aiohttp.ClientSession(connector=connector) as session:
         for chunk_size in chunk_sizes:
-            for n_threads in thread_numbers:
+            for n_threads in concurrency:
                 for total_size in total_sizes:
                     start = time.time()
 

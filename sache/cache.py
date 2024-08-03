@@ -1,3 +1,4 @@
+import json
 import threading
 import queue
 import os
@@ -65,6 +66,9 @@ class ThreadedCache:
         self.worker_thread.join()
 
 
+def _metadata_path(run_name):
+    return f'{run_name}/metadata.json'
+
 class S3WCache():
     @classmethod
     def from_credentials(self, access_key_id, secret, *args, **kwargs):
@@ -72,15 +76,37 @@ class S3WCache():
         return S3WCache(s3_client, *args, **kwargs)
 
     def __init__(self, s3_client, run_name, save_every=1):
-        self.batch_size = save_every
+        self.save_every = save_every
         self.run_name = run_name
         self._in_mem = []
         self.s3_client = s3_client
+        self.metadata = None
 
     def append(self, activations):
+        if self.metadata is None:
+            self.metadata = {
+                'batch_size': activations.shape[0],
+                'sequence_length': activations.shape[1],
+                'dtype': str(activations.dtype),
+                'num_features': activations.shape[2],
+                'bytes_per_file': activations.element_size() * activations.numel(),
+                'batches_per_file': self.save_every
+            }
+
+            self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=BUCKET_NAME, Key=_metadata_path(self.run_name))
+        else:
+            if activations.shape[0] != self.metadata['batch_size']:
+                print(f'Warning: batch-size mismatch. Expected {self.metadata["batch_size"]}, got {activations.shape}')
+            if activations.shape[1] != self.metadata['sequence_length']:
+                print(f'Warning: sequence-length mismatch. Expected {self.metadata["sequence_length"]}, got {activations.shape}')
+            if activations.shape[2] != self.metadata['num_features']:
+                print(f'Warning: num-features mismatch. Expected {self.metadata["num_features"]}, got {activations.shape}')
+            if str(activations.dtype) != self.metadata['dtype']:
+                print(f'Warning: dtype mismatch. Expected {self.metadata["dtype"]}, got {activations.dtype}')
+
         self._in_mem.append(activations)
 
-        if len(self._in_mem) >= self.batch_size:
+        if len(self._in_mem) >= self.save_every:
             return self._save_in_mem()
 
         return None

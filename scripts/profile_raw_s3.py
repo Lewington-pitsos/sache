@@ -109,7 +109,7 @@ async def main():
                     # total_size = int(response.headers['Content-Length'])
                     # print('total_size:', total_size)
 
-                    results = await download_chunks(session, url, total_size, chunk_size, n_threads)
+                    results = await download_chunks(session, url, total_size, chunk_size)
                     r.queue.append(results)
 
                     end = time.time()

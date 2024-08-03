@@ -306,12 +306,12 @@ class S3RCache():
                 return t.reshape(self.metadata['shape'])
             else:
                 time.sleep(0.1)
-                
+
         if self.downloading_thread is not None:
-            self.stop()
+            self.stop_downloading()()
         raise StopIteration
 
-    def stop(self):
+    def stop_downloading(self):
         if self.downloading_thread is not None:
             self.downloading_thread.join()
             self.downloading_thread = None

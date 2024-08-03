@@ -105,17 +105,17 @@ def test_s3_read_cache(s3_client, test_cache_dir):
 
     assert count == 0
 
-    # activations = torch.rand(32, 16, 9)
+    activations = torch.rand(32, 16, 9)
 
-    # buffer = BytesIO()
-    # torch.save(activations, buffer)
-    # buffer.seek(0)
-    # s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.saved.pt')
-    # for batch in cache:
-    #     count += 1
-    #     pass
+    buffer = BytesIO()
+    torch.save(activations, buffer)
+    buffer.seek(0)
+    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.saved.pt')
+    for batch in cache:
+        count += 1
+        pass
 
-    # assert count == 0
+    assert count == 0
 
     # cache.sync()
     # for batch in cache:

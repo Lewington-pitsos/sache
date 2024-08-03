@@ -239,7 +239,6 @@ class S3RCache():
             os.makedirs(self.local_cache_dir, exist_ok=True)
         
         self._s3_paths = self._list_s3_files()
-        print('s3 path', self._s3_paths)
 
         response = self.s3_client.get_object(Bucket=bucket_name, Key=_metadata_path(s3_prefix))
         content = response['Body'].read()
@@ -254,7 +253,7 @@ class S3RCache():
     def _list_s3_files(self):
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
         _metadata = _metadata_path(self.s3_prefix)
-        paths = [obj['Key'] for obj in response['Contents'] if obj['Key'] != _metadata]
+        paths = [f"http://{BUCKET_NAME}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
 
         return sorted(paths)
 

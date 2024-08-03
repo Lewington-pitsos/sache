@@ -90,7 +90,8 @@ class S3WCache():
                 'dtype': str(activations.dtype),
                 'num_features': activations.shape[2],
                 'bytes_per_file': activations.element_size() * activations.numel(),
-                'batches_per_file': self.save_every
+                'batches_per_file': self.save_every,
+                'shape': (activations.shape[0] * self.save_every, *activations.shape[1:])
             }
 
             self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=BUCKET_NAME, Key=_metadata_path(self.run_name))
@@ -106,14 +107,16 @@ class S3WCache():
 
         self._in_mem.append(activations)
 
-        if len(self._in_mem) >= self.save_every:
+        if len(self._in_mem) == self.save_every:
             return self._save_in_mem()
 
         return None
 
     def finalize(self):
-        if self._in_mem:
-            self._save_in_mem()
+        # effectively a no-op since append will always save unless there are too few activations
+        # to make up the block, in which case we do not want to save them or we lose file size uniformity
+        if self.metadata is None:
+            raise ValueError('Cannot finalize cache without any data')
 
     def _save_in_mem(self):
         id = self._save(torch.cat(self._in_mem), str(uuid4()))
@@ -127,11 +130,15 @@ class S3WCache():
     def _save(self, activations, id):
         filename = self._filename(id)
 
-        buffer = BytesIO()
-        torch.save(activations, buffer)
-        buffer.seek(0)
-        
-        self.s3_client.upload_fileobj(buffer, BUCKET_NAME, filename)
+        tensor_bytes = activations.numpy().tobytes()
+    
+        self.s3_client.put_object(
+            Bucket=BUCKET_NAME, 
+            Key=filename, 
+            Body=tensor_bytes, 
+            ContentLength=len(tensor_bytes),
+            ContentType='application/octet-stream'
+        )
 
         return id
 
@@ -141,7 +148,7 @@ class S3WCache():
         self.s3_client.download_fileobj(BUCKET_NAME, filename, buffer)
         buffer.seek(0)
 
-        return torch.load(buffer)
+        return torch.frombuffer(buffer.read(), dtype=torch.float32).reshape(self.metadata['shape'])
 
 class RCache():
     def __init__(self, local_cache_dir, device, buffer_size=10, num_workers=4):
@@ -226,6 +233,14 @@ class S3RCache():
             os.makedirs(self.local_cache_dir, exist_ok=True)
         
         self._s3_paths = self._list_s3_files()
+
+        response = self.s3_client.get_object(Bucket=bucket_name, Key=_metadata_path(s3_prefix))
+        content = response['Body'].read()
+        self.metadata = json.loads(content)
+
+    @property
+    def bytes_per_file(self):
+        return self.metadata['bytes_per_file']
 
     def sync(self):
         self._s3_paths = self._list_s3_files()

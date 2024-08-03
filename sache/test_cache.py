@@ -41,7 +41,7 @@ def test_cache_dir():
     shutil.rmtree(local_dir)
 
 
-def test_cache(s3_client):
+def test_write_to_s3cache(s3_client):
     test_prefix, s3 = s3_client
 
     exists_before = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
@@ -58,6 +58,8 @@ def test_cache(s3_client):
     assert exists_after
 
     loaded = c.load(id)
+    assert loaded.shape == activations.shape
+    assert loaded.dtype == activations.dtype
     assert torch.equal(activations, loaded)
 
 def test_batched_cache(s3_client, test_cache_dir):

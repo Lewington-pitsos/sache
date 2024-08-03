@@ -240,17 +240,13 @@ class S3RCache():
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
         return S3RCache(local_cache_dir, s3_client, s3_prefix, *args, **kwargs)
 
-    def __init__(self, local_cache_dir, s3_client, s3_prefix, bucket_name=BUCKET_NAME, device='cpu', concurrency=100, chunk_size=MB*16) -> None:
+    def __init__(self, s3_client, s3_prefix, bucket_name=BUCKET_NAME, device='cpu', concurrency=100, chunk_size=MB*16) -> None:
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
-        self.local_cache_dir = local_cache_dir
         self.bucket_name = bucket_name
         self.device = device
         self.concurrency = concurrency
         self.chunk_size = chunk_size
-
-        if not os.path.exists(self.local_cache_dir):
-            os.makedirs(self.local_cache_dir, exist_ok=True)
         
         self._s3_paths = self._list_s3_files()
 
@@ -300,19 +296,20 @@ class S3RCache():
 
 
     def __next__(self):
-        if self.buffer:
-            buffers = self.buffer.pop(0)
+        while self._file_index < len(self._s3_paths) or self.buffer:
+            if self.buffer:
+                buffers = self.buffer.pop(0)
 
-            combined_bytes = b''.join(chunk for _, chunk in sorted(buffers, key=lambda x: x[0])) 
+                combined_bytes = b''.join(chunk for _, chunk in sorted(buffers, key=lambda x: x[0])) 
 
-            t = torch.frombuffer(combined_bytes, dtype=eval(self.metadata['dtype']))
-            return t.reshape(self.metadata['shape'])
-        else:
-            if self._file_index >= len(self._s3_paths):
-                if self.downloading_thread is not None:
-                    self.stop()
-                raise StopIteration
-            time.sleep(0.1)
+                t = torch.frombuffer(combined_bytes, dtype=eval(self.metadata['dtype']))
+                return t.reshape(self.metadata['shape'])
+            else:
+                time.sleep(0.1)
+                
+        if self.downloading_thread is not None:
+            self.stop()
+        raise StopIteration
 
     def stop(self):
         if self.downloading_thread is not None:
@@ -331,8 +328,8 @@ class RBatchingCache():
         self.cache.sync()
 
     def __iter__(self):
-        self.cache.__iter__()
         self._finished = False
+        self.cache.__iter__()
         return self
 
     def __next__(self):

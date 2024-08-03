@@ -62,27 +62,7 @@ def test_write_to_s3cache(s3_client):
     assert loaded.dtype == activations.dtype
     assert torch.equal(activations, loaded)
 
-def test_batched_cache(s3_client, test_cache_dir):
-    s3_prefix, s3_client = s3_client
-    inner_cache = S3RCache(test_cache_dir, s3_client, s3_prefix)
-    cache = RBatchingCache(inner_cache, 2)
-    
-    activations = torch.rand(32, 16, 9)
-
-    buffer = BytesIO()
-    torch.save(activations, buffer)
-    buffer.seek(0)
-    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.pt')
-
-    cache.sync()
-    count = 0
-    for _ in cache:
-        count += 1
-        pass
-
-    assert count == 16
-
-def test_s3_read_cache(s3_client, test_cache_dir):
+def test_batched_cache(s3_client):
     s3_prefix, s3_client = s3_client
 
     metadata = {
@@ -97,7 +77,40 @@ def test_s3_read_cache(s3_client, test_cache_dir):
 
     s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
 
-    cache = S3RCache(test_cache_dir, s3_client, s3_prefix, concurrency=10)
+    inner_cache = S3RCache(s3_client, s3_prefix)
+    cache = RBatchingCache(inner_cache, 2)
+    
+    activations = torch.rand(32, 16, 9)
+
+    buffer = BytesIO()
+    torch.save(activations, buffer)
+    buffer.seek(0)
+    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.saved.pt')
+
+    cache.sync()
+    count = 0
+    for _ in cache:
+        count += 1
+        pass
+
+    assert count == 16
+
+def test_s3_read_cache(s3_client):
+    s3_prefix, s3_client = s3_client
+
+    metadata = {
+        'batch_size': 32,
+        'sequence_length': 16,
+        'hidden_dim': 9,
+        'batches_per_file': 1,
+        'dtype': 'torch.float32',
+        'shape': [32, 16, 9],
+        'bytes_per_file': 32 * 16 * 9 * 4
+    }
+
+    s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
+
+    cache = S3RCache(s3_client, s3_prefix, concurrency=10)
 
     count = 0
     for batch in cache:

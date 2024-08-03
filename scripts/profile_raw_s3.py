@@ -1,3 +1,4 @@
+import boto3
 import torch
 import warnings
 import json
@@ -11,6 +12,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from sache.cache import S3RCache
 from sache.train import SAE
 
 
@@ -88,51 +90,43 @@ class Reader():
         
 
 async def main():
-    i = 0
     run_name = randomname.generate('adj/', 'n/')
 
     print('run_name:', run_name)
 
     r = Reader()
-    connector = aiohttp.TCPConnector(limit=max(concurrency))
-    async with aiohttp.ClientSession(connector=connector) as session:
-        for chunk_size in chunk_sizes:
-            for n_threads in concurrency:
-                for total_size in total_sizes:
-                    start = time.time()
+    with open('.credentials.json') as f:
+        credentials = json.load(f)
+    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
+   
 
-                    url = f'http://lewington-pitsos-sache.s3.amazonaws.com/tensors/bytes_{i}.pt'
+    sae = SAE(n_features=768, hidden_size=1024, device='cuda')
+    optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
 
-                    # get total size of url
+    cache = S3RCache(s3_client, 'tensors' 'lewington-pitsos-sache', chunk_size=MB * 16)
+    iterator = iter(cache)
+    total_size = cache.metadata['bytes_per_file']
+    for i in range(8):
+        start = time.time()
 
-                    # response = await session.head(url)
-                    # total_size = int(response.headers['Content-Length'])
-                    # print('total_size:', total_size)
+        t = next(iterator)
 
-                    results = await download_chunks(session, url, total_size, chunk_size)
-                    r.queue.append(results)
 
-                    end = time.time()
+        for i in range(0, 1280, 64):
+            optimizer.zero_grad()
+            batch = t[i:i+64]
 
-                    stats.append({
-                        "param_hash": str(round(chunk_size / MB, 2)) + '_' + str(n_threads) + '_' + str(round(total_size / MB, 2)),
-                        "time": end - start,
-                        "download_speed": total_size / (end - start),
-                        "MB per second": round(total_size / MB) / (end - start),
-                        "total_size": total_size,
-                        "chunk_size": chunk_size,
-                        "n_threads": n_threads
-                    })
+            reconstruction, _ = sae(batch)
+            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
+            rmse.backward()
+            optimizer.step()
 
-                    with open(f"cruft/{run_name}-stats.json", "w") as f:
-                        json.dump(stats, f)
+        end = time.time()
 
-                    print(f"Time taken: {end - start:.2f} seconds")
-                    print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
 
-                    i += 1
-                    if i > 15:
-                        break
+        print(f"Time taken: {end - start:.2f} seconds")
+        print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
+
 
     r.stop()
 

@@ -2,12 +2,14 @@ import numpy as np
 import torch
 import io
 import pickle
+import warnings
 import json
 import time
 import asyncio
 import aiohttp
 import randomname
 import threading
+
 
 async def request_chunk(session, url, start, end):
     headers = {
@@ -20,9 +22,7 @@ async def download_chunks(session, url, total_size, chunk_size, n_threads):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
 
     tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
-    results = await asyncio.gather(*tasks)
-    
-    return results
+    return await asyncio.gather(*tasks)
 
 
 KB = 1024
@@ -34,8 +34,8 @@ MB = KB * KB
 
 chunk_sizes = [MB * 16] * 8
 thread_numbers = [32]
-# total_sizes = [5368709120]
-total_sizes = [5368710352]
+total_sizes = [5368709120]
+# total_sizes = [5368710352]
 
 stats = []
 
@@ -51,20 +51,11 @@ class Reader():
         sorted_responses = sorted(responses, key=lambda x: x[0])
         combined_bytes = b''.join(chunk for _, chunk in sorted_responses)
 
-        # buffer = io.BytesIO(combined_bytes)
-        # t = torch.load(buffer, map_location='cuda')
-        # print(t.shape)
-
-        # make combined_bytes writable
-
-        # combined_bytes = bytearray(combined_bytes)
-
-        # t = torch.frombuffer(combined_bytes, dtype=torch.float32)
-        # t = t.reshape(1280, 1024 * 1024)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t = torch.frombuffer(combined_bytes, dtype=torch.float32).to('cuda')
+        t = t.reshape(1280, 1024 * 1024)
         
-        # print(t[:4, :4])
-        # print(t.shape) 
-
     def _read(self):
         while True:
             if self.stop_reading:

@@ -9,6 +9,12 @@ import asyncio
 import aiohttp
 import randomname
 import threading
+import sys 
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from sache.train import SAE
 
 
 async def request_chunk(session, url, start, end):
@@ -44,6 +50,10 @@ class Reader():
         self.queue = []
         self.reading_thread = threading.Thread(target=self._read)
         self.stop_reading = False
+        self.sae = SAE(n_features=768, hidden_size=1024, device='cuda')
+        self.optimizer = torch.optim.Adam(self.sae.parameters(), lr=1e-3)
+
+
         self.reading_thread.start()
 
     def _to_tensor(self):
@@ -54,8 +64,17 @@ class Reader():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             t = torch.frombuffer(combined_bytes, dtype=torch.float32).to('cuda')
-        t = t.reshape(1280, 1024 * 1024)
-        
+        t = t.reshape(1280, 1024, 1024)
+
+        for i in range(0, 1280, 64):
+            self.optimizer.zero_grad()
+            batch = t[i:i+64]
+
+            reconstruction, _ = self.sae(batch)
+            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
+            rmse.backward()
+            self.optimizer.step()
+
     def _read(self):
         while True:
             if self.stop_reading:

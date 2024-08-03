@@ -37,6 +37,7 @@ def train(run_name, hidden_size, n_features, device, batch_size=32):
 
         rmse = torch.sqrt(torch.mean((activations - reconstruction) ** 2))
         
+        
         rmse.backward()
         optimizer.step()
 

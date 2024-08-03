@@ -308,7 +308,7 @@ class S3RCache():
                 time.sleep(0.1)
 
         if self.downloading_thread is not None:
-            self.stop_downloading()()
+            self.stop_downloading()
         raise StopIteration
 
     def stop_downloading(self):

@@ -220,6 +220,20 @@ class RCache():
 KB = 1024
 MB = KB * KB
 
+
+async def download_chunks(session, url, total_size, chunk_size):
+    chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
+
+    tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
+    return await asyncio.gather(*tasks)
+
+async def request_chunk(session, url, start, end):
+    headers = {
+        "Range": f"bytes={start}-{end}",
+    }
+    async with session.get(url, headers=headers) as response:
+        return start, await response.read()
+
 class S3RCache():
     @classmethod
     def from_credentials(self, access_key_id, secret, s3_prefix, local_cache_dir, *args, **kwargs):
@@ -264,38 +278,26 @@ class S3RCache():
             raise ValueError('Cannot iterate over cache a second time while it is downloading')
 
         if len(self._s3_paths) > 0:
-            self.downloading_thread = Thread(target=self._download_files)
+            self.downloading_thread = Thread(target=self._download_loop)
             self.downloading_thread.start()
 
         return self
 
-    def _download_files(self):
-        asyncio.run(self._async_download)
+    def _download_loop(self):
+        asyncio.run(self._async_download())
 
-    async def _async_download(self):    
+    async def _async_download(self):   
         connector = aiohttp.TCPConnector(limit=self.concurrency)
         async with aiohttp.ClientSession(connector=connector) as session:
             while self._file_index < len(self._s3_paths):
                 if len(self.buffer) < 3:
                     url = self._s3_paths[self._file_index]
-                    results = await self.download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
+                    results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
                     self.buffer.append(results)
                     self._file_index += 1
                 else:
                     await asyncio.sleep(0.1)
 
-    async def download_chunks(self, session, url, total_size, chunk_size):
-        chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
-
-        tasks = [asyncio.create_task(self.request_chunk(session, url, start, end)) for start, end in chunks]
-        return await asyncio.gather(*tasks)
-
-    async def request_chunk(session, url, start, end):
-        headers = {
-            "Range": f"bytes={start}-{end}",
-        }
-        async with session.get(url, headers=headers) as response:
-            return start, await response.read()
 
     def __next__(self):
         if self.buffer:
@@ -305,7 +307,6 @@ class S3RCache():
 
             t = torch.frombuffer(combined_bytes, dtype=eval(self.metadata['dtype']))
             return t.reshape(self.metadata['shape'])
-        
         else:
             if self._file_index >= len(self._s3_paths):
                 if self.downloading_thread is not None:

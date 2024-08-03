@@ -91,12 +91,13 @@ def test_s3_read_cache(s3_client, test_cache_dir):
         'hidden_dim': 9,
         'batches_per_file': 1,
         'dtype': 'torch.float32',
-        'shape': [32, 16, 9]
+        'shape': [32, 16, 9],
+        'bytes_per_file': 32 * 16 * 9 * 4
     }
 
     s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
 
-    cache = S3RCache(test_cache_dir, s3_client, s3_prefix)
+    cache = S3RCache(test_cache_dir, s3_client, s3_prefix, concurrency=10)
 
     count = 0
     for batch in cache:
@@ -117,12 +118,12 @@ def test_s3_read_cache(s3_client, test_cache_dir):
 
     assert count == 0
 
-    # cache.sync()
-    # for batch in cache:
-    #     count += 1
-    #     pass
+    cache.sync()
+    for batch in cache:
+        count += 1
+        pass
 
-    # assert count > 0
+    assert count > 0
 
 def test_local_reading_cache(test_cache_dir):
     cache = RCache(test_cache_dir, 'cpu', buffer_size=2, num_workers=1)

@@ -25,6 +25,8 @@ def test_generate():
         layer=3,
         hook_name='blocks.2.hook_resid_post',
         cache_type='local',
+        log_every=1,
+        num_proc=4,
     )
 
     full_cache_dir = os.path.join(OUTER_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)

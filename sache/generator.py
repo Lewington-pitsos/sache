@@ -5,6 +5,8 @@ import time
 import torch
 from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
+from multiprocessing import cpu_count
+
 
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedCache
 from sache.tok import chunk_and_tokenize
@@ -117,6 +119,7 @@ def generate(
         cache_type,
         seed=42,
         log_every=100,
+        num_proc=cpu_count() // 2,
     ):
 
     torch.manual_seed(seed)
@@ -144,6 +147,7 @@ def generate(
         transformer.tokenizer, 
         text_key=text_column_name, 
         max_seq_len=max_length,
+        num_proc=num_proc
     )
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)

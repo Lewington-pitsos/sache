@@ -1,3 +1,4 @@
+import warnings
 import json
 import threading
 import queue
@@ -12,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import asyncio
 import aiohttp
+
+from sache.constants import *
 
 STAGES = ['saved', 'shuffled']
 OUTER_CACHE_DIR = 'cache'
@@ -29,7 +32,7 @@ class NoopCache():
         pass
 
 
-class ThreadedCache:
+class ThreadedReadCache:
     def __init__(self, cache):
         self.cache = cache
         self.lock = threading.Lock()
@@ -91,7 +94,7 @@ class S3WCache():
                 'sequence_length': activations.shape[1],
                 'dtype': str(activations.dtype),
                 'hidden_dim': activations.shape[2],
-                'bytes_per_file': activations.element_size() * activations.numel(),
+                'bytes_per_file': activations.element_size() * activations.numel() * self.save_every,
                 'batches_per_file': self.save_every,
                 'shape': (activations.shape[0] * self.save_every, *activations.shape[1:])
             }
@@ -150,7 +153,12 @@ class S3WCache():
         self.s3_client.download_fileobj(BUCKET_NAME, filename, buffer)
         buffer.seek(0)
 
-        return torch.frombuffer(buffer.read(), dtype=torch.float32).reshape(self.metadata['shape'])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t = torch.frombuffer(buffer.read(), dtype=torch.float32)
+
+        return t.reshape(self.metadata['shape'])
+
 
 class RCache():
     def __init__(self, local_cache_dir, device, buffer_size=10, num_workers=4):
@@ -217,10 +225,6 @@ class RCache():
         if self.buffer_filler_thread is not None:
             self.buffer_filler_thread.join()
 
-KB = 1024
-MB = KB * KB
-
-
 async def download_chunks(session, url, total_size, chunk_size):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
 
@@ -253,6 +257,8 @@ class S3RCache():
         response = self.s3_client.get_object(Bucket=bucket_name, Key=_metadata_path(s3_prefix))
         content = response['Body'].read()
         self.metadata = json.loads(content)
+        self._activation_dtype = eval(self.metadata['dtype'])
+
 
         self.downloading_thread = None
         self.buffer = []
@@ -302,7 +308,9 @@ class S3RCache():
 
                 combined_bytes = b''.join(chunk for _, chunk in sorted(buffers, key=lambda x: x[0])) 
 
-                t = torch.frombuffer(combined_bytes, dtype=eval(self.metadata['dtype']))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    t = torch.frombuffer(combined_bytes, dtype=self._activation_dtype)
                 return t.reshape(self.metadata['shape'])
             else:
                 time.sleep(0.1)
@@ -312,6 +320,7 @@ class S3RCache():
         raise StopIteration
 
     def stop_downloading(self):
+        self._file_index = len(self._s3_paths)
         if self.downloading_thread is not None:
             self.downloading_thread.join()
             self.downloading_thread = None

@@ -57,7 +57,7 @@ def load_normal_tensor():
 
     buffer = io.BytesIO(combined_bytes)
 
-    t = torch.load(buffer, map_location='cuda')
+    t = torch.load(buffer, map_location='cuda', weights_only=True)
 
     end = time.time()
     print('normal time:', end - start)

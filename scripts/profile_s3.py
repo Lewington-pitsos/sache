@@ -72,7 +72,7 @@ class Reader():
                 while len(self.responses) > 0:
                     buffer = self.responses.pop()
                     # buffer.seek(0)
-                    # t = torch.load(buffer, map_location='cuda')
+                    # t = torch.load(buffer, map_location='cuda', weights_only=True)
 
                 self.responses = []
 

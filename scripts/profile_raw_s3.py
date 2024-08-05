@@ -3,7 +3,6 @@ import torch
 import json
 import time
 import asyncio
-import randomname
 import sys 
 import os
 
@@ -22,7 +21,7 @@ async def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=400)
     
     iter(cache)
     
@@ -38,7 +37,7 @@ async def main():
 
             reconstruction, _ = sae(batch)
             rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            print(f"RMSE: {rmse.item()}")
+            # print(f"RMSE: {rmse.item()}")
             rmse.backward()
             optimizer.step()
 

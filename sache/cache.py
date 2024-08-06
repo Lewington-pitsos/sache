@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import asyncio
 import aiohttp
+from multiprocessing import Value, Process, Queue
+
 
 from sache.constants import *
 
@@ -227,16 +229,27 @@ class RCache():
 
 async def download_chunks(session, url, total_size, chunk_size):
     chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
-
     tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
-    return await asyncio.gather(*tasks)
+    responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    results = []
+    for response in responses:
+        if isinstance(response, Exception):
+            # Handle the error (e.g., log it, retry, or raise it)
+            print("Error occurred:", response)
+        else:
+            results.append(response)
+    return results
 
 async def request_chunk(session, url, start, end):
-    headers = {
-        "Range": f"bytes={start}-{end}",
-    }
-    async with session.get(url, headers=headers) as response:
-        return start, await response.read()
+    headers = {"Range": f"bytes={start}-{end}"}
+    try:
+        async with session.get(url, headers=headers) as response:
+            response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
+            return start, await response.read()
+    except Exception as e:
+        # General exception handling (e.g., network issues, HTTP errors)
+        return e
 
 class S3RCache():
     @classmethod
@@ -244,14 +257,26 @@ class S3RCache():
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
         return S3RCache(local_cache_dir, s3_client, s3_prefix, *args, **kwargs)
 
-    def __init__(self, s3_client, s3_prefix, bucket_name=BUCKET_NAME, device='cpu', concurrency=100, chunk_size=MB*16) -> None:
+    def __init__(self, 
+                 s3_client, 
+                 s3_prefix, 
+                 bucket_name=BUCKET_NAME, 
+                 device='cpu', 
+                 concurrency=100, 
+                 chunk_size=MB*16, 
+                 buffer_size=2,
+                 paths=None,
+                 n_workers=1
+            ) -> None:
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
         self.bucket_name = bucket_name
         self.device = device
         self.concurrency = concurrency
         self.chunk_size = chunk_size
+        self.buffer_size = buffer_size
         
+        self.paths = paths
         self._s3_paths = self._list_s3_files()
 
         response = self.s3_client.get_object(Bucket=bucket_name, Key=_metadata_path(s3_prefix))
@@ -259,14 +284,25 @@ class S3RCache():
         self.metadata = json.loads(content)
         self._activation_dtype = eval(self.metadata['dtype'])
 
+        self._running_processes = []
+        self.n_workers = n_workers
+        self._file_index = Value('i', 0)
+        self._ongoing_downloads = Value('i', 0)
 
-        self.downloading_thread = None
+        self.writeable_tensors = Queue(maxsize=self.buffer_size)
         self.buffer = []
+        for i in range(self.buffer_size):
+            self.writeable_tensors.put(i)
+            self.buffer.append(torch.empty(self.metadata['shape'], dtype=self._activation_dtype))
+        self.readable_tensors = Queue(maxsize=self.buffer_size)
 
     def sync(self):
         self._s3_paths = self._list_s3_files()
 
     def _list_s3_files(self):
+        if self.paths is not None:
+            return self.paths
+
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
         _metadata = _metadata_path(self.s3_prefix)
         paths = [f"http://{BUCKET_NAME}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
@@ -274,14 +310,16 @@ class S3RCache():
         return sorted(paths)
 
     def __iter__(self):
-        self._file_index = 0
+        self._file_index.value = 0
 
-        if self.downloading_thread is not None:
+        if self._running_processes:
             raise ValueError('Cannot iterate over cache a second time while it is downloading')
 
         if len(self._s3_paths) > 0:
-            self.downloading_thread = Thread(target=self._download_loop)
-            self.downloading_thread.start()
+            while len(self._running_processes) < self.n_workers:
+                p = Process(target=self._download_loop)
+                p.start()
+                self._running_processes.append(p)
 
         return self
 
@@ -291,39 +329,58 @@ class S3RCache():
     async def _async_download(self):   
         connector = aiohttp.TCPConnector(limit=self.concurrency)
         async with aiohttp.ClientSession(connector=connector) as session:
-            while self._file_index < len(self._s3_paths):
-                if len(self.buffer) < 3:
-                    url = self._s3_paths[self._file_index]
-                    results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
-                    self.buffer.append(results)
-                    self._file_index += 1
-                else:
-                    await asyncio.sleep(0.1)
+            while self._file_index.value < len(self._s3_paths):
+                with self._ongoing_downloads.get_lock():
+                    self._ongoing_downloads.value += 1
 
+                with self._file_index.get_lock():
+                    url = self._s3_paths[self._file_index.value]
+                    self._file_index.value += 1
 
+                
+                bytes_results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
+                await self.compile_and_write(bytes_results)
+
+    async def compile_and_write(self, byte_buffers):
+        combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t = torch.frombuffer(combined_bytes, dtype=self._activation_dtype)
+        t = t.reshape(self.metadata['shape'])
+
+        await self.write_tensor(t)
+
+    async def write_tensor(self, t):
+        free_idx = self.writeable_tensors.get(block=True)
+        
+        self.buffer[free_idx].copy_(t)
+        self.readable_tensors.put(free_idx, block=True)
+
+        with self._ongoing_downloads.get_lock():
+            self._ongoing_downloads.value -= 1
+
+    def _next_tensor(self):
+        idx = self.readable_tensors.get(block=True)
+        t = self.buffer[idx].clone()
+
+        self.writeable_tensors.put(idx, block=True)
+
+        return t
+    
     def __next__(self):
-        while self._file_index < len(self._s3_paths) or self.buffer:
-            if self.buffer:
-                buffers = self.buffer.pop(0)
+        while self._file_index.value < len(self._s3_paths) or not self.readable_tensors.empty() or self._ongoing_downloads.value > 0:
+            return self._next_tensor()
 
-                combined_bytes = b''.join(chunk for _, chunk in sorted(buffers, key=lambda x: x[0])) 
-
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    t = torch.frombuffer(combined_bytes, dtype=self._activation_dtype)
-                return t.reshape(self.metadata['shape'])
-            else:
-                time.sleep(0.1)
-
-        if self.downloading_thread is not None:
+        if self._running_processes:
             self.stop_downloading()
         raise StopIteration
 
     def stop_downloading(self):
-        self._file_index = len(self._s3_paths)
-        if self.downloading_thread is not None:
-            self.downloading_thread.join()
-            self.downloading_thread = None
+        self._file_index.value = len(self._s3_paths)
+        for p in self._running_processes:
+            p.join()
+        self._running_processes = []
 
 class RBatchingCache():
     def __init__(self, cache, batch_size) -> None:

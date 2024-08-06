@@ -242,13 +242,18 @@ async def download_chunks(session, url, total_size, chunk_size):
 
 async def request_chunk(session, url, start, end):
     headers = {"Range": f"bytes={start}-{end}"}
-    try:
-        async with session.get(url, headers=headers) as response:
-            response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
-            return start, await response.read()
-    except Exception as e:
-        print('error occured on url', url, start, end)
-        return e
+    tries_left = 5
+    while True:
+        try:
+            async with session.get(url, headers=headers) as response:
+                response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
+                return start, await response.read()
+        except Exception as e:
+            tries_left -= 1
+            if tries_left == 0:
+                return e
+            print('error occured on url', url, start, end)
+            await asyncio.sleep(0.15)
 
 class S3RCache():
     @classmethod

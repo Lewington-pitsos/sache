@@ -120,11 +120,15 @@ def test_s3_read_cache(s3_client):
     assert count == 0
 
     activations = torch.rand(32, 16, 9)
+    tensor_bytes = activations.numpy().tobytes()
 
-    buffer = BytesIO()
-    torch.save(activations, buffer)
-    buffer.seek(0)
-    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.saved.pt')
+    s3_client.put_object(
+        Bucket=BUCKET_NAME, 
+        Key=s3_prefix + '/a.saved.pt', 
+        Body=tensor_bytes, 
+        ContentLength=len(tensor_bytes),
+        ContentType='application/octet-stream'
+    )
     for batch in cache:
         count += 1
         pass
@@ -138,6 +142,10 @@ def test_s3_read_cache(s3_client):
 
     assert count > 0
 
+    assert batch.shape == activations.shape
+    assert batch.dtype == activations.dtype
+    assert torch.equal(batch, activations)
+    assert batch.isnan().sum().item() == 0
     cache.stop_downloading()
 
 def test_local_reading_cache(test_cache_dir):

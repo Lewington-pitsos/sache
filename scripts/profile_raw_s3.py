@@ -21,15 +21,17 @@ async def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=400)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=3)
     
     iter(cache)
     
     total_size = cache.metadata['bytes_per_file']
-    for i in range(8):
+    for i in range(32):
         start = time.time()
 
         t = next(cache).to(device)
+        print(t.mean())
+        print(t.isnan().sum())
 
         for i in range(0, 1024, 64):
             optimizer.zero_grad()
@@ -37,7 +39,7 @@ async def main():
 
             reconstruction, _ = sae(batch)
             rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            # print(f"RMSE: {rmse.item()}")
+            print(f"RMSE: {rmse.item()}")
             rmse.backward()
             optimizer.step()
 

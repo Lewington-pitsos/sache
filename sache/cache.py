@@ -290,7 +290,7 @@ class S3RCache():
         self.buffer = []
         for i in range(self.buffer_size):
             self.writeable_tensors.put(i)
-            self.buffer.append(torch.empty(self.metadata['shape'], dtype=self._activation_dtype))
+            self.buffer.append(torch.zeros(self.metadata['shape'], dtype=self._activation_dtype).share_memory_())
         self.readable_tensors = Queue(maxsize=self.buffer_size)
         
         self._stop = Value('b', False)
@@ -332,16 +332,16 @@ class S3RCache():
 
         if len(self._s3_paths) > 0:
             while len(self._running_processes) < self.n_workers:
-                p = Process(target=self._download_loop)
+                p = Process(target=self._download_loop, args=(self.buffer,))
                 p.start()
                 self._running_processes.append(p)
 
         return self
 
-    def _download_loop(self):
-        asyncio.run(self._async_download())
+    def _download_loop(self, shared_tensors):
+        asyncio.run(self._async_download(shared_tensors))
 
-    async def _async_download(self):   
+    async def _async_download(self, shared_tensors):   
         connector = aiohttp.TCPConnector(limit=self.concurrency)
         async with aiohttp.ClientSession(connector=connector) as session:
             while self._file_index.value < len(self._s3_paths) and not self._stop.value:
@@ -353,9 +353,9 @@ class S3RCache():
                     self._file_index.value += 1
                 
                 bytes_results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
-                await self.compile_and_write(bytes_results)
+                self.compile_and_write(bytes_results, shared_tensors)
 
-    async def compile_and_write(self, byte_buffers):
+    def compile_and_write(self, byte_buffers, shared_tensors):
         combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
 
         with warnings.catch_warnings():
@@ -363,13 +363,12 @@ class S3RCache():
             t = torch.frombuffer(combined_bytes, dtype=self._activation_dtype)
         t = t.reshape(self.metadata['shape'])
 
-        await self.write_tensor(t)
+        self.write_tensor(t, shared_tensors)
 
-    async def write_tensor(self, t):
-        free_idx = self.writeable_tensors.get(block=True)
-        
-        self.buffer[free_idx].copy_(t)
-        self.readable_tensors.put(free_idx, block=True)
+    def write_tensor(self, t, shared_tensors):
+        idx = self.writeable_tensors.get(block=True)
+        shared_tensors[idx].copy_(t)
+        self.readable_tensors.put(idx, block=True)
 
         with self._ongoing_downloads.get_lock():
             self._ongoing_downloads.value -= 1

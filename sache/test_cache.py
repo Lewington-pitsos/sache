@@ -138,6 +138,8 @@ def test_s3_read_cache(s3_client):
 
     assert count > 0
 
+    cache.stop_downloading()
+
 def test_local_reading_cache(test_cache_dir):
     cache = RCache(test_cache_dir, 'cpu', buffer_size=2, num_workers=1)
 

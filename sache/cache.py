@@ -15,7 +15,6 @@ import asyncio
 import aiohttp
 from multiprocessing import Value, Process, Queue
 
-
 from sache.constants import *
 
 STAGES = ['saved', 'shuffled']
@@ -248,7 +247,7 @@ async def request_chunk(session, url, start, end):
             response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
             return start, await response.read()
     except Exception as e:
-        # General exception handling (e.g., network issues, HTTP errors)
+        print('error occured on url', url, start, end)
         return e
 
 class S3RCache():
@@ -264,7 +263,7 @@ class S3RCache():
                  device='cpu', 
                  concurrency=100, 
                  chunk_size=MB*16, 
-                 buffer_size=2,
+                 buffer_size=4,
                  paths=None,
                  n_workers=1
             ) -> None:
@@ -286,8 +285,6 @@ class S3RCache():
 
         self._running_processes = []
         self.n_workers = n_workers
-        self._file_index = Value('i', 0)
-        self._ongoing_downloads = Value('i', 0)
 
         self.writeable_tensors = Queue(maxsize=self.buffer_size)
         self.buffer = []
@@ -295,9 +292,27 @@ class S3RCache():
             self.writeable_tensors.put(i)
             self.buffer.append(torch.empty(self.metadata['shape'], dtype=self._activation_dtype))
         self.readable_tensors = Queue(maxsize=self.buffer_size)
+        
+        self._stop = Value('b', False)
+        self._file_index = Value('i', 0)
+        self._ongoing_downloads = Value('i', 0)
 
     def sync(self):
         self._s3_paths = self._list_s3_files()
+
+    def _reset(self):
+        self._file_index.value = 0
+        self._ongoing_downloads.value = 0
+        self._stop.value = False
+
+        while not self.readable_tensors.empty():
+            self.readable_tensors.get()
+        
+        while not self.writeable_tensors.empty():
+            self.writeable_tensors.get()
+        for i in range(self.buffer_size):
+            self.writeable_tensors.put(i)
+
 
     def _list_s3_files(self):
         if self.paths is not None:
@@ -310,7 +325,7 @@ class S3RCache():
         return sorted(paths)
 
     def __iter__(self):
-        self._file_index.value = 0
+        self._reset()
 
         if self._running_processes:
             raise ValueError('Cannot iterate over cache a second time while it is downloading')
@@ -329,14 +344,13 @@ class S3RCache():
     async def _async_download(self):   
         connector = aiohttp.TCPConnector(limit=self.concurrency)
         async with aiohttp.ClientSession(connector=connector) as session:
-            while self._file_index.value < len(self._s3_paths):
+            while self._file_index.value < len(self._s3_paths) and not self._stop.value:
                 with self._ongoing_downloads.get_lock():
                     self._ongoing_downloads.value += 1
 
                 with self._file_index.get_lock():
                     url = self._s3_paths[self._file_index.value]
                     self._file_index.value += 1
-
                 
                 bytes_results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
                 await self.compile_and_write(bytes_results)
@@ -378,6 +392,8 @@ class S3RCache():
 
     def stop_downloading(self):
         self._file_index.value = len(self._s3_paths)
+        self._ongoing_downloads.value = 0
+        self._stop.value = True
         for p in self._running_processes:
             p.join()
         self._running_processes = []

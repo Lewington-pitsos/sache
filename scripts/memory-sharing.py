@@ -1,53 +1,47 @@
 import torch
 import torch.multiprocessing as mp
 import time
-from multiprocessing import shared_memory
-import numpy as np
 
-
-def write(shm_name, shape):
+def write(shared_tensor, idx):
     start_make = time.time()
-    t = torch.rand(shape)
+    t = torch.randn_like(shared_tensor[idx])
     end_make = time.time()
     print(f"Time taken to make: {end_make - start_make:.2f} seconds")
 
     print(t[0, -2:, -2:])
 
-
-    existing_shm = shared_memory.SharedMemory(name=shm_name)
-    data = t.numpy().tobytes()
     # Write directly to the shared memory tensor
     start_write = time.time()
-    existing_shm.buf[:] = data
-    print(type(data))
-    
-    # Close the shared memory block
-    existing_shm.close()
+    shared_tensor[idx, :] = t
     end_write = time.time()
     print(f"Time taken to write: {end_write - start_write:.2f} seconds")
 
 def main():
+    start_share = time.time()
     shape = (1024, 1024, 768)
-    size = shape[0] * shape[1] * shape[2] * 4
 
     # Create a shared tensor
-    # shared_tensor = torch.zeros(shape, dtype=torch.float32).share_memory_()
+    shared_tensor = torch.empty((3, *shape), dtype=torch.float32).share_memory_()
+    end_share = time.time()
+    print(f"Time taken to share: {end_share - start_share:.2f} seconds")
 
-    shm = shared_memory.SharedMemory(create=True, size=size)
+    pool = []
+    for i in range(3):
+        p = mp.Process(target=write, args=(shared_tensor,0))
+        p.start()
+        pool.append(p)
 
-    p = mp.Process(target=write, args=(shm.name, shape))
+    for p in pool:
+        p.join()
 
-    p.start()
-    p.join()
 
     start_read = time.time()
-
-    data = shm.buf[:]
-    print(type(data))
-    t = torch.frombuffer(data, dtype=torch.float32).view(shape)
+    # Since the tensor is already in shared memory, we just access it
+    tensor = shared_tensor[0].clone()  # Optionally create a clone to avoid affecting the original shared tensor
     end_read = time.time()
     print(f"Time taken to read: {end_read - start_read:.2f} seconds")
-    print(t[0, -2:, -2:])
+    print(tensor[0, -2:, -2:])
+    print(f"Total time: {end_read - start_share:.2f} seconds")
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Necessary for safely sharing CUDA tensors between processes

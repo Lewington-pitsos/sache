@@ -14,7 +14,7 @@ from queue import Queue
 import asyncio
 import aiohttp
 from multiprocessing import Value, Process, Queue
-
+import multiprocessing as mp
 from sache.constants import *
 
 STAGES = ['saved', 'shuffled']
@@ -238,22 +238,79 @@ async def download_chunks(session, url, total_size, chunk_size):
             print("Error occurred:", response)
         else:
             results.append(response)
+
+    print('returning results', len(results))
     return results
 
 async def request_chunk(session, url, start, end):
     headers = {"Range": f"bytes={start}-{end}"}
-    tries_left = 5
-    while True:
-        try:
-            async with session.get(url, headers=headers) as response:
-                response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
-                return start, await response.read()
-        except Exception as e:
-            tries_left -= 1
-            if tries_left == 0:
-                return e
-            print('error occured on url', url, start, end)
-            await asyncio.sleep(0.15)
+    async with session.get(url, headers=headers) as response:
+        response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
+        return start, await response.read()
+
+def download_loop(buffer, file_index, s3_paths, stop, shape, activation_dtype, readable_tensors, writeable_tensors, ongoing_downloads):
+    while file_index.value < len(s3_paths) and not stop.value:
+
+        print('starting download loop')
+        # bytes_results = asyncio.run(self._async_download())
+        print('starting compile and write')
+        
+        bytes_results = [(0, bytes(805306368 * 4))]
+        t = compile(bytes_results, activation_dtype, shape)
+        print('compiled and wrote')
+        write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
+
+
+def compile(byte_buffers, dtype, shape):
+    # combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
+
+    combined_bytes = bytes(805306368 * 4)
+
+    print('combined')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        print('gogogogo')
+        t = torch.frombuffer(combined_bytes, dtype=dtype)
+        print('created from buffer')
+        print(t.shape)
+        print(shape)
+        t = t.clone()
+        print('cloned')
+    t = t.reshape(shape)
+
+    return t
+
+def write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads):
+    print(t.shape)
+    print('waiting for idx')
+    idx = writeable_tensors.get(block=True)
+    print('acquireed idx', idx)
+    buffer[idx, :] = t
+    print('wrote tensor')
+    readable_tensors.put(idx, block=True)
+    print('put idx in readable')
+
+    with ongoing_downloads.get_lock():
+        ongoing_downloads.value -= 1
+    print('decremented ongoing downloads')
+
+async def _async_download(self):   
+    connector = aiohttp.TCPConnector(limit=self.concurrency)
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        with self._ongoing_downloads.get_lock():
+            self._ongoing_downloads.value += 1
+
+        with self._file_index.get_lock():
+            url = self._s3_paths[self._file_index.value]
+            self._file_index.value += 1
+        
+        print('starting download of ', url)
+        return await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
+
+
+
 
 class S3RCache():
     @classmethod
@@ -272,6 +329,9 @@ class S3RCache():
                  paths=None,
                  n_workers=1
             ) -> None:
+
+        mp.set_start_method('spawn')
+
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
         self.bucket_name = bucket_name
@@ -296,10 +356,12 @@ class S3RCache():
         for i in range(self.buffer_size):
             self.writeable_tensors.put(i)
         self.buffer=torch.empty((self.buffer_size, *self.metadata['shape']), dtype=self._activation_dtype).share_memory_()
-        
+
         self._stop = Value('b', False)
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
+
+        print('finished initializing')
 
     def sync(self):
         self._s3_paths = self._list_s3_files()
@@ -336,46 +398,18 @@ class S3RCache():
 
         if len(self._s3_paths) > 0:
             while len(self._running_processes) < self.n_workers:
-                p = Process(target=self._download_loop, args=(self.buffer,))
+                p = Process(target=compile, args=(
+                    None,
+                    self._activation_dtype,
+                    self.metadata['shape'],
+                ))
                 p.start()
                 self._running_processes.append(p)
 
         return self
 
-    def _download_loop(self, buffer):
-        asyncio.run(self._async_download(buffer))
 
-    async def _async_download(self, buffer):   
-        connector = aiohttp.TCPConnector(limit=self.concurrency)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            while self._file_index.value < len(self._s3_paths) and not self._stop.value:
-                with self._ongoing_downloads.get_lock():
-                    self._ongoing_downloads.value += 1
-
-                with self._file_index.get_lock():
-                    url = self._s3_paths[self._file_index.value]
-                    self._file_index.value += 1
-                
-                bytes_results = await download_chunks(session, url, self.metadata['bytes_per_file'], self.chunk_size)
-                self.compile_and_write(bytes_results, buffer)
-
-    def compile_and_write(self, byte_buffers, buffer):
-        combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            t = torch.frombuffer(combined_bytes, dtype=self._activation_dtype)
-        t = t.reshape(self.metadata['shape'])
-
-        self.write_tensor(t, buffer)
-
-    def write_tensor(self, t, buffer):
-        idx = self.writeable_tensors.get(block=True)
-        buffer[idx, :] = t
-        self.readable_tensors.put(idx, block=True)
-
-        with self._ongoing_downloads.get_lock():
-            self._ongoing_downloads.value -= 1
+  
 
     def _next_tensor(self):
         idx = self.readable_tensors.get(block=True)

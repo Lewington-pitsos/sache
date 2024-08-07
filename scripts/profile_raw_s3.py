@@ -2,17 +2,26 @@ import boto3
 import torch
 import json
 import time
-import asyncio
 import sys 
 import os
+import multiprocessing as mp
+import warnings
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sache.cache import S3RCache
+from sache.cache import S3RCache, compile
 from sache.train import SAE
 from sache.constants import *
 
-async def main():
+def m2():
+    mp.set_start_method('spawn')
+    buffer=torch.empty((3, 1024, 1024, 768), dtype=torch.float32).share_memory_()
+    p = mp.Process(target=compile, args=(buffer, torch.float32, (1024, 1024, 768)))
+    p.start()
+
+    p.join()
+
+def main():
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
@@ -21,7 +30,7 @@ async def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=3)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=1)
     
     iter(cache)
     
@@ -33,15 +42,15 @@ async def main():
         print(t.mean())
         print(t.isnan().sum())
 
-        for i in range(0, 1024, 64):
-            optimizer.zero_grad()
-            batch = t[i:i+64]
+        # for i in range(0, 1024, 64):
+        #     optimizer.zero_grad()
+        #     batch = t[i:i+64]
 
-            reconstruction, _ = sae(batch)
-            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            print(f"RMSE: {rmse.item()}")
-            rmse.backward()
-            optimizer.step()
+        #     reconstruction, _ = sae(batch)
+        #     rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
+        #     print(f"RMSE: {rmse.item()}")
+        #     rmse.backward()
+        #     optimizer.step()
 
         end = time.time()
 
@@ -53,4 +62,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

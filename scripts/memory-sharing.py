@@ -1,12 +1,27 @@
 import torch
 import torch.multiprocessing as mp
 import time
+import warnings
+
+def generate_random_bytes(size):
+    """ Generate a buffer of random bytes of given size. """
+    return bytes(size)
+
 
 def write(shared_tensor, idx):
     start_make = time.time()
-    t = torch.randn_like(shared_tensor[idx])
+    b = generate_random_bytes(shared_tensor[idx].numel() * shared_tensor[idx].element_size())
     end_make = time.time()
     print(f"Time taken to make: {end_make - start_make:.2f} seconds")
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        t = torch.frombuffer(b, dtype=shared_tensor[idx].dtype).clone()
+    t = t.reshape(shared_tensor[idx].shape)
+
+    end_load = time.time()
+    print('time taken to load tensor', end_load - end_make)
+
 
     print(t[0, -2:, -2:])
 
@@ -26,8 +41,8 @@ def main():
     print(f"Time taken to share: {end_share - start_share:.2f} seconds")
 
     pool = []
-    for i in range(3):
-        p = mp.Process(target=write, args=(shared_tensor,0))
+    for i in range(1):
+        p = mp.Process(target=write, args=(shared_tensor,i))
         p.start()
         pool.append(p)
 

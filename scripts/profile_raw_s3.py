@@ -30,33 +30,39 @@ def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=1)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=4)
     
     iter(cache)
     
     total_size = cache.metadata['bytes_per_file']
-    for i in range(32):
+    overall_start = time.time()
+    n = 8
+    for i in range(n):
         start = time.time()
 
-        t = next(cache).to(device)
+        t = next(cache)
         print(t.mean())
         print(t.isnan().sum())
 
-        # for i in range(0, 1024, 64):
-        #     optimizer.zero_grad()
-        #     batch = t[i:i+64]
+        for i in range(0, 1024, 64):
+            optimizer.zero_grad()
+            batch = t[i:i+64].to(device)
 
-        #     reconstruction, _ = sae(batch)
-        #     rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-        #     print(f"RMSE: {rmse.item()}")
-        #     rmse.backward()
-        #     optimizer.step()
+            reconstruction, _ = sae(batch)
+            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
+            print(f"RMSE: {rmse.item()}")
+            rmse.backward()
+            optimizer.step()
 
         end = time.time()
 
 
         print(f"Time taken: {end - start:.2f} seconds")
         print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
+
+    overall_end = time.time()
+    print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
+    print(f"Overall MB per second: {round(total_size / MB * n) / (overall_end - overall_start):.2f}")
 
     cache.stop_downloading()
 

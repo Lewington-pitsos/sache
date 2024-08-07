@@ -239,7 +239,6 @@ async def download_chunks(session, url, total_size, chunk_size):
         else:
             results.append(response)
 
-    print('returning results', len(results))
     return results
 
 async def request_chunk(session, url, start, end):
@@ -249,39 +248,26 @@ async def request_chunk(session, url, start, end):
         return start, await response.read()
 
 def download_loop(*args):
-    print('starting download loop')
     asyncio.run(_async_download(*args,))
-    print('starting compile and write')
         
 def compile(byte_buffers, dtype, shape):
     combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        print('gogogogo')
         t = torch.frombuffer(combined_bytes, dtype=dtype)
-        print('created from buffer')
-        print(t.shape)
-        print(shape)
         t = t.clone()
-        print('cloned')
     t = t.reshape(shape)
 
     return t
 
 def write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads):
-    print(t.shape)
-    print('waiting for idx')
     idx = writeable_tensors.get(block=True)
-    print('acquireed idx', idx)
     buffer[idx, :] = t
-    print('wrote tensor')
     readable_tensors.put(idx, block=True)
-    print('put idx in readable')
 
     with ongoing_downloads.get_lock():
         ongoing_downloads.value -= 1
-    print('decremented ongoing downloads')
 
 async def _async_download(        
         buffer, 
@@ -309,10 +295,8 @@ async def _async_download(
                 url = s3_paths[file_index.value]
                 file_index.value += 1
             
-            print('starting download of ', url)
             bytes_results = await download_chunks(session, url, bytes_per_file, chunk_size)
             t = compile(bytes_results, activation_dtype, shape)
-            print('compiled and wrote')
             write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
 
 
@@ -329,7 +313,7 @@ class S3RCache():
                  device='cpu', 
                  concurrency=100, 
                  chunk_size=MB*16, 
-                 buffer_size=3,
+                 buffer_size=5,
                  paths=None,
                  n_workers=1
             ) -> None:
@@ -364,8 +348,6 @@ class S3RCache():
         self._stop = Value('b', False)
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
-
-        print('finished initializing')
 
     def sync(self):
         self._s3_paths = self._list_s3_files()

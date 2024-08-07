@@ -248,43 +248,13 @@ async def request_chunk(session, url, start, end):
         response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
         return start, await response.read()
 
-def download_loop(
-        buffer, 
-        file_index, 
-        s3_paths, 
-        stop, 
-        shape, 
-        activation_dtype, 
-        readable_tensors, 
-        writeable_tensors, 
-        ongoing_downloads,
-        concurrency, 
-        bytes_per_file,
-        chunk_size,
-    ):
-    while file_index.value < len(s3_paths) and not stop.value:
-
-        print('starting download loop')
-        bytes_results = asyncio.run(_async_download(
-            concurrency,
-            ongoing_downloads,
-            file_index,
-            s3_paths,
-            bytes_per_file,
-            chunk_size
-        ))
-        print('starting compile and write')
+def download_loop(*args):
+    print('starting download loop')
+    asyncio.run(_async_download(*args,))
+    print('starting compile and write')
         
-        t = compile(bytes_results, activation_dtype, shape)
-        print('compiled and wrote')
-        write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
-
-
 def compile(byte_buffers, dtype, shape):
     combined_bytes = b''.join(chunk for _, chunk in sorted(byte_buffers, key=lambda x: x[0])) 
-
-
-    print('combined')
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -313,19 +283,38 @@ def write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloa
         ongoing_downloads.value -= 1
     print('decremented ongoing downloads')
 
-async def _async_download(concurrency, ongoing_downloads, file_index, s3_paths, bytes_per_file, chunk_size):   
+async def _async_download(        
+        buffer, 
+        file_index, 
+        s3_paths, 
+        stop, 
+        shape, 
+        activation_dtype, 
+        readable_tensors, 
+        writeable_tensors, 
+        ongoing_downloads,
+        concurrency, 
+        bytes_per_file,
+        chunk_size
+    ):   
+
     connector = aiohttp.TCPConnector(limit=concurrency)
 
     async with aiohttp.ClientSession(connector=connector) as session:
-        with ongoing_downloads.get_lock():
-            ongoing_downloads.value += 1
+        while file_index.value < len(s3_paths) and not stop.value:
+            with ongoing_downloads.get_lock():
+                ongoing_downloads.value += 1
 
-        with file_index.get_lock():
-            url = s3_paths[file_index.value]
-            file_index.value += 1
-        
-        print('starting download of ', url)
-        return await download_chunks(session, url, bytes_per_file, chunk_size)
+            with file_index.get_lock():
+                url = s3_paths[file_index.value]
+                file_index.value += 1
+            
+            print('starting download of ', url)
+            bytes_results = await download_chunks(session, url, bytes_per_file, chunk_size)
+            t = compile(bytes_results, activation_dtype, shape)
+            print('compiled and wrote')
+            write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
+
 
 class S3RCache():
     @classmethod

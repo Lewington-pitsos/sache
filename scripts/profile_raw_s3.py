@@ -33,11 +33,11 @@ def main():
     
     total_size = cache.metadata['bytes_per_file']
     overall_start = time.time()
-    n = 16
+    n = 64
     bs = 128
+    start = time.time()
     
     for j, t in enumerate(cache):
-        start = time.time()
 
         for i in range(0, 1024, bs):
             optimizer.zero_grad()
@@ -49,13 +49,16 @@ def main():
             rmse.backward()
             optimizer.step()
 
-        end = time.time()
 
+        end = time.time()
         print(f"Time taken: {end - start:.2f} seconds")
         print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
 
         if j == n - 1:
             break
+
+        start = time.time()
+
 
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")

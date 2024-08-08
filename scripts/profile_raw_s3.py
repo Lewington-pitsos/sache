@@ -29,22 +29,22 @@ def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=3)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4)
     
     iter(cache)
     
     total_size = cache.metadata['bytes_per_file']
     overall_start = time.time()
-    n = 8
+    n = 16
     for i in range(n):
         start = time.time()
 
         t = next(cache)
         print(t.mean())
 
-        for i in range(0, 1024, 64):
+        for i in range(0, 1024, 128):
             optimizer.zero_grad()
-            batch = t[i:i+64].to(device)
+            batch = t[i:i+128].to(device)
 
             reconstruction, _ = sae(batch)
             rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))

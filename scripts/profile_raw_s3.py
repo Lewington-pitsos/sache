@@ -5,7 +5,6 @@ import time
 import sys 
 import os
 import multiprocessing as mp
-import warnings
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -30,7 +29,7 @@ def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 8, concurrency=500, n_workers=4)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=3)
     
     iter(cache)
     
@@ -42,7 +41,6 @@ def main():
 
         t = next(cache)
         print(t.mean())
-        print(t.isnan().sum())
 
         for i in range(0, 1024, 64):
             optimizer.zero_grad()

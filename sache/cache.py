@@ -1,3 +1,4 @@
+import sys
 import warnings
 import json
 import threading
@@ -13,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import asyncio
 import aiohttp
+import signal
 from multiprocessing import Value, Process, Queue
 import multiprocessing as mp
 from sache.constants import *
@@ -227,25 +229,38 @@ class RCache():
             self.buffer_filler_thread.join()
 
 async def download_chunks(session, url, total_size, chunk_size):
-    chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
-    tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
-    responses = await asyncio.gather(*tasks, return_exceptions=True)
+    tries_left = 5
+    while tries_left > 0:
+        chunks = [(i, min(i + chunk_size - 1, total_size - 1)) for i in range(0, total_size, chunk_size)]
+        tasks = [asyncio.create_task(request_chunk(session, url, start, end)) for start, end in chunks]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    results = []
-    for response in responses:
-        if isinstance(response, Exception):
-            # Handle the error (e.g., log it, retry, or raise it)
-            print("Error occurred:", response)
-        else:
-            results.append(response)
+        results = []
+        retry = False
+        for response in responses:
+            if isinstance(response, Exception):
+                # Handle the error (e.g., log it, retry, or raise it)
+                print("Error occurred:", response)
+                tries_left -= 1
+                retry = True
+                break
+            else:
+                results.append(response)
 
-    return results
+        if not retry:
+            return results
+
+    return None
 
 async def request_chunk(session, url, start, end):
     headers = {"Range": f"bytes={start}-{end}"}
-    async with session.get(url, headers=headers) as response:
-        response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
-        return start, await response.read()
+    try: 
+        async with session.get(url, headers=headers) as response:
+            response.raise_for_status()  # Raises an error for bad responses (4xx, 5xx, etc.)
+            return start, await response.read()
+    except Exception as e:
+        return e
+
 
 def download_loop(*args):
     asyncio.run(_async_download(*args,))
@@ -296,8 +311,11 @@ async def _async_download(
                 file_index.value += 1
             
             bytes_results = await download_chunks(session, url, bytes_per_file, chunk_size)
-            t = compile(bytes_results, activation_dtype, shape)
-            write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
+            if bytes_results is not None:
+                t = compile(bytes_results, activation_dtype, shape)
+                write_tensor(t, buffer, writeable_tensors, readable_tensors, ongoing_downloads)
+            else:
+                print('Failed to download url', url)
 
 
 class S3RCache():
@@ -313,7 +331,7 @@ class S3RCache():
                  device='cpu', 
                  concurrency=100, 
                  chunk_size=MB*16, 
-                 buffer_size=5,
+                 buffer_size=2,
                  paths=None,
                  n_workers=1
             ) -> None:
@@ -348,6 +366,15 @@ class S3RCache():
         self._stop = Value('b', False)
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
+
+
+        signal.signal(signal.SIGTERM, self._catch_stop)
+        signal.signal(signal.SIGINT, self._catch_stop)
+
+    def _catch_stop(self):
+        print('cleaning up before process is killed')
+        self.stop_downloading()
+        sys.exit(0)
 
     def sync(self):
         self._s3_paths = self._list_s3_files()
@@ -399,16 +426,22 @@ class S3RCache():
                 ))
                 p.start()
                 self._running_processes.append(p)
+                time.sleep(0.25)
 
         return self
 
     def _next_tensor(self):
-        idx = self.readable_tensors.get(block=True)
-        t = self.buffer[idx].clone()
+        try:
+            idx = self.readable_tensors.get(block=True)
+            t = self.buffer[idx].clone()
 
-        self.writeable_tensors.put(idx, block=True)
+            self.writeable_tensors.put(idx, block=True)
 
-        return t
+            return t
+        except Exception as e:
+            print('exception while iterating', e)
+            self.stop_downloading()
+            raise StopIteration
     
     def __next__(self):
         while self._file_index.value < len(self._s3_paths) or not self.readable_tensors.empty() or self._ongoing_downloads.value > 0:
@@ -419,11 +452,24 @@ class S3RCache():
         raise StopIteration
 
     def stop_downloading(self):
+        print('stopping workers...')
         self._file_index.value = len(self._s3_paths)
-        self._ongoing_downloads.value = 0
         self._stop.value = True
+
+        while not all([not p.is_alive() for p in self._running_processes]):
+            if not self.readable_tensors.empty():
+                self.readable_tensors.get()
+
+            if not self.writeable_tensors.full():
+                self.writeable_tensors.put(0)
+
+            time.sleep(0.25)
+
+
         for p in self._running_processes:
-            p.join()
+            p.join() # still join to make sure all resources are cleaned up
+
+        self._ongoing_downloads.value = 0
         self._running_processes = []
 
 class RBatchingCache():

@@ -29,22 +29,19 @@ def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
 
-    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4)
-    
-    iter(cache)
+    cache = S3RCache(s3_client, 'merciless-citadel', 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
     
     total_size = cache.metadata['bytes_per_file']
     overall_start = time.time()
     n = 16
-    for i in range(n):
+    bs = 128
+    
+    for j, t in enumerate(cache):
         start = time.time()
 
-        t = next(cache)
-        print(t.mean())
-
-        for i in range(0, 1024, 128):
+        for i in range(0, 1024, bs):
             optimizer.zero_grad()
-            batch = t[i:i+128].to(device)
+            batch = t[i:i+bs].to(device)
 
             reconstruction, _ = sae(batch)
             rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
@@ -54,14 +51,15 @@ def main():
 
         end = time.time()
 
-
         print(f"Time taken: {end - start:.2f} seconds")
         print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
+
+        if j == n - 1:
+            break
 
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
     print(f"Overall MB per second: {round(total_size / MB * n) / (overall_end - overall_start):.2f}")
-
     cache.stop_downloading()
 
 

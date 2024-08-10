@@ -2,6 +2,8 @@ v
 testing
 **/__pycache__/
 
+data
+
 log
 cache
 design

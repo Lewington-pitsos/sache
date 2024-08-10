@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     data_dir = 'data/250'
 
-    for i, activations in tqdm.tqdm(enumerate(cache)):
+    for i, activations in tqdm.tqdm(enumerate(cache), total=n):
         if i == n:
             break
 

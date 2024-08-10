@@ -337,7 +337,10 @@ class S3RCache():
             ) -> None:
 
         if mp.get_start_method(allow_none=True) != 'spawn':
-            mp.set_start_method('spawn')
+            try:
+                mp.set_start_method('spawn')
+            except RuntimeError as e:
+                raise RuntimeError(f'Cannot set start method to spawn. You may have created a SRCache outside of the main process. Error: {e}')
 
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client

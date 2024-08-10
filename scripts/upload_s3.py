@@ -30,7 +30,11 @@ def upload_tensor_to_s3(bucket_name, tensor, s3_key):
             Bucket=bucket_name, 
             Key=s3_key, 
             Body=tensor_bytes, 
-            ContentLength=len(tensor_bytes),
+            
+            
+
+
+            
             ContentType='application/octet-stream'
         )
         print(f"Uploaded tensor to s3://{bucket_name}/{s3_key}")

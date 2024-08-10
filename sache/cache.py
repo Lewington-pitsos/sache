@@ -320,9 +320,9 @@ async def _async_download(
 
 class S3RCache():
     @classmethod
-    def from_credentials(self, access_key_id, secret, s3_prefix, local_cache_dir, *args, **kwargs):
-        s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
-        return S3RCache(local_cache_dir, s3_client, s3_prefix, *args, **kwargs)
+    def from_credentials(self, aws_access_key_id, aws_secret_access_key, *args, **kwargs):
+        s3_client = boto3.client('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+        return S3RCache(s3_client, *args, **kwargs)
 
     def __init__(self, 
                  s3_client, 
@@ -336,7 +336,8 @@ class S3RCache():
                  n_workers=1
             ) -> None:
 
-        mp.set_start_method('spawn')
+        if mp.get_start_method(allow_none=True) != 'spawn':
+            mp.set_start_method('spawn')
 
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client

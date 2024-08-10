@@ -12,14 +12,6 @@ from sache.cache import S3RCache, compile
 from sache.train import SAE
 from sache.constants import *
 
-def m2():
-    mp.set_start_method('spawn')
-    buffer=torch.empty((3, 1024, 1024, 768), dtype=torch.float32).share_memory_()
-    p = mp.Process(target=compile, args=(buffer, torch.float32, (1024, 1024, 768)))
-    p.start()
-
-    p.join()
-
 def main():
     with open('.credentials.json') as f:
         credentials = json.load(f)

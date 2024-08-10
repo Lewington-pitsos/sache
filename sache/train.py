@@ -46,27 +46,41 @@ def train(run_name, hidden_size, n_features, device, batch_size=32):
         if i > n_batches:
             break
 
+def get_histogram(tensor, bins=50):
+    hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
+
+    bin_edges = np.linspace(float(tensor.min()), float(tensor.max()), bins+1)
+
+    hist_list = hist.tolist()
+    bin_edges_list = bin_edges.tolist()
+
+    return hist_list, bin_edges_list
+
+
 class TrainLogger(ProcessLogger):
-    def _get_histogram(self, tensor, bins=50):
-        hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
-
-        bin_edges = np.linspace(float(tensor.min()), float(tensor.max()), bins+1)
-
-        hist_list = hist.tolist()
-        bin_edges_list = bin_edges.tolist()
-
-        return {
-            "counts": hist_list,
-            "edges": bin_edges_list
+    def log_sae(self, sae, info=None):
+        
+        ecounts, eedges = get_histogram(sae.enc)
+        dcounts, dedges = get_histogram(sae.dec)
+        message = {
+            'event': 'sae',
+            'enc': { 
+                'counts': ecounts,
+                'edges': eedges
+            },
+            'dec': {
+                'counts': dcounts,
+                'edges': dedges
+            }
         }
 
-    def log_sae(self, sae):
-        self.log({
-            'event': 'sae',
-            'enc': self._get_histogram(sae.enc),
-            'dec': self._get_histogram(sae.dec)
-        })
+        if info is not None:
+            for k in info.keys():
+                if k in message:
+                    raise ValueError(f'Key {k} already exists in message', message, info)
+            message.update(info)
         
+        self.log(message)
 
 if __name__ == '__main__':
     train(

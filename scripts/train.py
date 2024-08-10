@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache
-from sache.train import SAE, TrainLogger
+from sache.train import SAE, TrainLogger, get_histogram
 from sache.constants import MB
 
 def main():
@@ -44,9 +44,23 @@ def main():
             rmse.backward()
             optimizer.step()
 
-        logger.log_sae(sae)
 
         end = time.time()
+        elapsed = end - start
+
+        binput, einput = get_histogram(batch)
+        brecon, erecon = get_histogram(reconstruction)
+        bdelta, edelta = get_histogram(batch - reconstruction)
+        info = {
+            'elapsed': elapsed, 
+            'mb_downloaded': total_size / MB, 
+            'mbps': total_size / MB / elapsed,
+            'input_hist': { 'counts': binput, 'edges': einput},
+            'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
+            'delta_hist': { 'counts': bdelta, 'edges': edelta}
+        }
+
+        logger.log_sae(sae, info=info)
         print(f"Time taken: {end - start:.2f} seconds")
         print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
 

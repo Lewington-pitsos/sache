@@ -1,6 +1,7 @@
 import os
 import torch
 from tqdm import tqdm
+import numpy as np
 
 from sache.cache import RBatchingCache, RCache, INNER_CACHE_DIR, OUTER_CACHE_DIR
 from sache.log import ProcessLogger
@@ -37,7 +38,6 @@ def train(run_name, hidden_size, n_features, device, batch_size=32):
 
         rmse = torch.sqrt(torch.mean((activations - reconstruction) ** 2))
         
-        
         rmse.backward()
         optimizer.step()
 
@@ -45,6 +45,28 @@ def train(run_name, hidden_size, n_features, device, batch_size=32):
 
         if i > n_batches:
             break
+
+class TrainLogger(ProcessLogger):
+    def _get_histogram(self, tensor, bins=50):
+        hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
+
+        bin_edges = np.linspace(float(tensor.min()), float(tensor.max()), bins+1)
+
+        hist_list = hist.tolist()
+        bin_edges_list = bin_edges.tolist()
+
+        return {
+            "counts": hist_list,
+            "edges": bin_edges_list
+        }
+
+    def log_sae(self, sae):
+        self.log({
+            'event': 'sae',
+            'enc': self._get_histogram(sae.enc),
+            'dec': self._get_histogram(sae.dec)
+        })
+        
 
 if __name__ == '__main__':
     train(

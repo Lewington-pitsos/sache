@@ -20,9 +20,6 @@ import multiprocessing as mp
 from sache.constants import *
 
 STAGES = ['saved', 'shuffled']
-OUTER_CACHE_DIR = 'cache'
-INNER_CACHE_DIR = 'cache'
-BUCKET_NAME = 'lewington-pitsos-sache'
 
 class NoopCache():
     def __init__(self, *args, **kwargs):

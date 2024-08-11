@@ -8,12 +8,12 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache
-from sache.train import SAE, TrainLogger, get_histogram
+from sache.train import SAE, TrainLogger, MeanStdNormalizer
 from sache.constants import MB
 
 def main():
     run_name = 'merciless-citadel'
-    logger = TrainLogger(run_name)
+    logger = TrainLogger(run_name, log_mean_std=False)
 
     with open('.credentials.json') as f:
         credentials = json.load(f)
@@ -23,6 +23,7 @@ def main():
     sae = SAE(n_features=512, hidden_size=768, device=device)
     logger.log_sae(sae)
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
+    normalizer = MeanStdNormalizer('sache/data/normalize/merciless-citadel', device=device)
 
     cache = S3RCache(s3_client, run_name, 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
     
@@ -37,32 +38,27 @@ def main():
         for i in range(0, 1024, bs):
             optimizer.zero_grad()
             batch = t[i:i+bs].to(device)
+            batch = normalizer.normalize(batch)
 
             reconstruction, _ = sae(batch)
             rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            logger.log({'event': 'training_batch', 'rmse': rmse.item()})
+            logger.log_loss(rmse, batch)
+
+            if i == 0:
+                logger.log_batch(sae, batch, reconstruction)
+
             rmse.backward()
             optimizer.step()
 
 
         end = time.time()
         elapsed = end - start
-
-        binput, einput = get_histogram(batch)
-        brecon, erecon = get_histogram(reconstruction)
-        bdelta, edelta = get_histogram(batch - reconstruction)
-        info = {
+        logger.log({
+            'event': 'file_processed',
             'elapsed': elapsed, 
             'mb_downloaded': total_size / MB, 
             'mbps': total_size / MB / elapsed,
-            'input_hist': { 'counts': binput, 'edges': einput},
-            'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
-            'delta_hist': { 'counts': bdelta, 'edges': edelta}
-        }
-
-        logger.log_sae(sae, info=info)
-        print(f"Time taken: {end - start:.2f} seconds")
-        print(f"MB Downloaded: {round(total_size / MB)}, MB per second: {round(total_size / MB) / (end - start):.2f}")
+        })
 
         if j == n - 1:
             break

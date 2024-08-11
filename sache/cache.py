@@ -372,7 +372,7 @@ class S3RCache():
         signal.signal(signal.SIGTERM, self._catch_stop)
         signal.signal(signal.SIGINT, self._catch_stop)
 
-    def _catch_stop(self):
+    def _catch_stop(self, *args, **kwargs):
         print('cleaning up before process is killed')
         self.stop_downloading()
         sys.exit(0)

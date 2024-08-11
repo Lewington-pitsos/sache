@@ -72,8 +72,8 @@ class MeanStdNormalizer():
         return (x - self.mean) / self.std
 
 class TrainLogger(ProcessLogger):
-    def __init__(self, run_name, log_mean_std=False):
-        super(TrainLogger, self).__init__(run_name)
+    def __init__(self, run_name, log_mean_std=False, *args, **kwargs):
+        super(TrainLogger, self).__init__(run_name, *args, **kwargs)
         self.log_mean_std = log_mean_std
 
     def log_sae(self, sae, info=None):
@@ -141,6 +141,25 @@ class TrainLogger(ProcessLogger):
         }
 
         self.log_sae(sae, info=info)
+
+class NOOPLogger:
+    def log(self, data):
+        # This method can handle logging data, currently it does nothing.
+        pass
+
+    def __enter__(self):
+        # Allows the logger to be used as a context manager.
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Handle exiting the context manager, ignoring any exceptions.
+        pass
+
+    def __getattr__(self, name):
+        # This will catch any undefined attribute or method calls.
+        # It returns a lambda that does nothing, making every call a no-op.
+        return lambda *args, **kwargs: None
+
 
 if __name__ == '__main__':
     train(

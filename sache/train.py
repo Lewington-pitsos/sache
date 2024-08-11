@@ -11,14 +11,18 @@ class SAE(torch.nn.Module):
     def __init__(self, n_features, hidden_size, device):
         super(SAE, self).__init__()
         self.enc = torch.nn.Parameter(torch.randn(hidden_size, n_features, device=device) / np.sqrt(n_features))
-        self.enc_b = torch.nn.Parameter(torch.zeros(n_features, dtype=torch.float32, device=device))
+        self.enc_b = torch.nn.Parameter(torch.randn(n_features, device=device) * 0.01)
         self.dec = torch.nn.Parameter(torch.randn(n_features, hidden_size, device=device) / np.sqrt(hidden_size))
         self.dec_b = torch.nn.Parameter(torch.zeros(hidden_size, dtype=torch.float32, device=device))
         self.activation = torch.nn.ReLU()
 
-    def forward(self, x):
+    def forward_descriptive(self, x):
         features = self.activation(x @ self.enc + self.enc_b) 
-        return features @ self.dec + self.dec_b, features 
+        return features @ self.dec + self.dec_b, features
+
+    def forward(self, x):
+        recon, _ = self.forward_descriptive(x)
+        return recon
     
 def build_cache(local_cache_dir, batch_size, device):
     inner_cache = RCache(local_cache_dir, device, buffer_size=8)
@@ -73,18 +77,28 @@ class TrainLogger(ProcessLogger):
         self.log_mean_std = log_mean_std
 
     def log_sae(self, sae, info=None):
-        
         ecounts, eedges = get_histogram(sae.enc)
+        ebcounts, ebedges = get_histogram(sae.enc_b, bins=25)
         dcounts, dedges = get_histogram(sae.dec)
+        dbcounts, dbedges = get_histogram(sae.dec_b, bins=25)
+        
         message = {
             'event': 'sae',
             'enc': { 
                 'counts': ecounts,
                 'edges': eedges
             },
+            'enc_b': {
+                'counts': ebcounts,
+                'edges': ebedges
+            },
             'dec': {
                 'counts': dcounts,
                 'edges': dedges
+            },
+            'dec_b': {
+                'counts': dbcounts,
+                'edges': dbedges
             }
         }
 
@@ -96,9 +110,15 @@ class TrainLogger(ProcessLogger):
         
         self.log(message)
 
-    def log_loss(self, rmse, batch):
-        message = {'event': 'training_batch', 'rmse': rmse.item()}
-        
+    def log_loss(self, mse, l1, loss, batch, latent):
+        message = {
+            'event': 'training_batch', 
+            'mse': mse.item(),
+            'L0': (latent > 0).float().sum(-1).mean().item(),
+            'L1': l1.item(),
+            'loss': loss.item()
+        }
+                
         if self.log_mean_std:
             message.update({
                 'input_mean': batch.mean(dim=(0, 1)).cpu().numpy().tolist(), 
@@ -107,14 +127,17 @@ class TrainLogger(ProcessLogger):
 
         self.log(message)
 
-    def log_batch(self, sae, batch, reconstruction):
+    def log_batch(self, sae, batch, reconstruction, latent):
         binput, einput = get_histogram(batch)
         brecon, erecon = get_histogram(reconstruction)
         bdelta, edelta = get_histogram(batch - reconstruction)
+        blatent, elatent = get_histogram(latent)
+
         info = {
             'input_hist': { 'counts': binput, 'edges': einput},
             'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
-            'delta_hist': { 'counts': bdelta, 'edges': edelta}
+            'delta_hist': { 'counts': bdelta, 'edges': edelta},
+            'latent_hist': { 'counts': blatent, 'edges': elatent},
         }
 
         self.log_sae(sae, info=info)

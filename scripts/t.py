@@ -1,3 +1,5 @@
+# TODO: Implement shuffling
+
 import boto3
 import torch
 import json
@@ -29,8 +31,9 @@ def main():
     
     total_size = cache.metadata['bytes_per_file']
     overall_start = time.time()
-    n = 1024
+    n = 64
     bs = 128
+    l1_coefficient = 1e-3
     start = time.time()
     
     for j, t in enumerate(cache):
@@ -40,14 +43,16 @@ def main():
             batch = t[i:i+bs].to(device)
             batch = normalizer.normalize(batch)
 
-            reconstruction, _ = sae(batch)
-            rmse = torch.sqrt(torch.mean((batch - reconstruction) ** 2))
-            logger.log_loss(rmse, batch)
+            reconstruction, latent = sae.forward_descriptive(batch)
+            mse = torch.mean((batch - reconstruction) ** 2)
+            l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
+            loss = mse + l1
+            logger.log_loss(mse, l1, loss, batch, latent)
 
             if i == 0:
-                logger.log_batch(sae, batch, reconstruction)
+                logger.log_batch(sae, batch, reconstruction, latent)
 
-            rmse.backward()
+            loss.backward()
             optimizer.step()
 
 

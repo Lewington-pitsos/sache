@@ -20,16 +20,16 @@ def main():
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     device = 'cuda'
-    sae = SAE(n_features=512, hidden_size=768, device=device)
+    sae = SAE(n_features=128, hidden_size=768, device=device) # 24576
     logger.log_sae(sae)
-    optimizer = torch.optim.Adam(sae.parameters(), lr=1e-2)
+    optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
     normalizer = MeanStdNormalizer('sache/data/normalize/merciless-citadel', device=device)
 
     cache = S3RCache(s3_client, run_name, 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
     
     total_size = cache.metadata['bytes_per_file']
     overall_start = time.time()
-    n = 64
+    n = 1024
     bs = 128
     start = time.time()
     

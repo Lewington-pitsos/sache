@@ -11,12 +11,14 @@ class SAE(torch.nn.Module):
     def __init__(self, n_features, hidden_size, device):
         super(SAE, self).__init__()
         self.enc = torch.nn.Parameter(torch.randn(hidden_size, n_features, device=device) / np.sqrt(n_features))
+        self.enc_b = torch.nn.Parameter(torch.zeros(n_features, dtype=torch.float32, device=device))
         self.dec = torch.nn.Parameter(torch.randn(n_features, hidden_size, device=device) / np.sqrt(hidden_size))
+        self.dec_b = torch.nn.Parameter(torch.zeros(hidden_size, dtype=torch.float32, device=device))
         self.activation = torch.nn.ReLU()
 
     def forward(self, x):
-        features = self.activation(x @ self.enc)
-        return features @ self.dec, features
+        features = self.activation(x @ self.enc + self.enc_b) 
+        return features @ self.dec + self.dec_b, features 
     
 def build_cache(local_cache_dir, batch_size, device):
     inner_cache = RCache(local_cache_dir, device, buffer_size=8)

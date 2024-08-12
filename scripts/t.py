@@ -14,12 +14,12 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    n = 32 # 512
+    n_steps = 32 # 512
     l1_coefficient = 1e-3
-    n_feats = 24576
-    bs = 256
+    n_feats = 768
+    bs = 1024
     samples_per_file = 1024
-    inner_bs = 4
+    inner_bs = 128
 
     run_name = 'merciless-citadel'
 
@@ -33,11 +33,19 @@ def main():
     sae = SAE(n_features=n_feats, hidden_size=768, device=device)
 
     with train_logger as lg:
+        lg.log({
+            'n_steps': n_steps,
+            'l1_coefficient': l1_coefficient,
+            'n_feats': n_feats,
+            'bs': bs,
+            'samples_per_file': samples_per_file,
+            'inner_bs': inner_bs,
+        })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
-        cache = S3RCache(s3_client, run_name, 'lewington-pitsos-sache', chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
+        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
         
         total_size = cache.metadata['bytes_per_file']
         overall_start = time.time()
@@ -46,32 +54,23 @@ def main():
         # no grad
         for j, t in enumerate(cache):
             for i in range(0, samples_per_file, bs):
-                st = time.time()
                 outer_batch = t[i:i+bs].to(device)
-                et = time.time()
-                print(f"Time taken to outer batch: {et - st:.2f} seconds")
                 for k in range(0, bs, inner_bs):
-                    pass
                     optimizer.zero_grad()
-                    with torch.no_grad():
-                        batch = outer_batch[k:k+inner_bs]
-                        # batch = normalizer.normalize(batch)
-                        print(batch.is_contiguous(), batch.stride())
+                    batch = outer_batch[k:k+inner_bs]
+                    batch = normalizer.normalize(batch)
 
-                        reconstruction, latent = sae.forward_descriptive(batch)
-                    #     mse = ((batch - reconstruction) ** 2).sum(-1).mean()
-                    #     l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                    #     loss = mse + l1
-                    #     lg.log_loss(mse, l1, loss, batch, latent)
+                    reconstruction, latent = sae.forward_descriptive(batch)
+                    mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                    l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
+                    loss = mse + l1
+                    lg.log_loss(mse, l1, loss, batch, latent)
 
-                    #     if i == 0:
-                    #         lg.log_batch(sae, batch, reconstruction, latent)
+                    if i == 0:
+                        lg.log_batch(sae, batch, reconstruction, latent)
 
-                    #     st = time.time()
-                    #     # loss.backward()
-                    #     # optimizer.step()
-                    #     et = time.time()
-                    #     print(f"Time taken to backpropagate: {et - st:.2f} seconds")
+                    loss.backward()
+                    optimizer.step()
 
 
             end = time.time()
@@ -84,7 +83,7 @@ def main():
                 'mbps': total_size / MB / elapsed,
             })
 
-            if j == n - 1:
+            if j == n_steps - 1:
                 break
 
             start = time.time()
@@ -92,7 +91,7 @@ def main():
 
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
-    print(f"Overall MB per second: {round(total_size / MB * n) / (overall_end - overall_start):.2f}")
+    print(f"Overall MB per second: {round(total_size / MB * n_steps) / (overall_end - overall_start):.2f}")
     cache.stop_downloading()
 
 

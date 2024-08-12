@@ -69,7 +69,8 @@ class MeanStdNormalizer():
         self.std = torch.load(os.path.join(parent_dir, 'std.pt'), map_location=device, weights_only=True)
 
     def normalize(self, x):
-        return (x - self.mean) / self.std
+        with torch.no_grad():
+            return (x - self.mean) / self.std
 
 class TrainLogger(ProcessLogger):
     def __init__(self, run_name, log_mean_std=False, *args, **kwargs):

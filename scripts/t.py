@@ -15,11 +15,11 @@ from sache.constants import MB, BUCKET_NAME
 
 def main():
     n = 32 # 512
-    bs = 128
     l1_coefficient = 1e-3
     n_feats = 24576
-    internal_bs = 4
+    bs = 256
     samples_per_file = 1024
+    inner_bs = 4
 
     run_name = 'merciless-citadel'
 
@@ -43,29 +43,35 @@ def main():
         overall_start = time.time()
         start = time.time()
         
+        # no grad
         for j, t in enumerate(cache):
-            for k in range(0, samples_per_file, bs):
-                sk = time.time()
-                external_batch = t[k:k+bs].to(device)
-                ek = time.time()
-                print(f"Time taken to put external batch on device: {ek - sk:.2f} seconds")
-
-                for i in range(0, bs, internal_bs):
+            for i in range(0, samples_per_file, bs):
+                st = time.time()
+                outer_batch = t[i:i+bs].to(device)
+                et = time.time()
+                print(f"Time taken to outer batch: {et - st:.2f} seconds")
+                for k in range(0, bs, inner_bs):
+                    pass
                     optimizer.zero_grad()
-                    batch = external_batch[i:i+internal_bs]
-                    batch = normalizer.normalize(batch)
+                    with torch.no_grad():
+                        batch = outer_batch[k:k+inner_bs]
+                        # batch = normalizer.normalize(batch)
+                        print(batch.is_contiguous(), batch.stride())
 
-                    reconstruction, latent = sae.forward_descriptive(batch)
-                    mse = torch.mean((batch - reconstruction) ** 2)
-                    l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                    loss = mse + l1
-                    lg.log_loss(mse, l1, loss, batch, latent)
+                        reconstruction, latent = sae.forward_descriptive(batch)
+                    #     mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                    #     l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
+                    #     loss = mse + l1
+                    #     lg.log_loss(mse, l1, loss, batch, latent)
 
-                    if i == 0:
-                        lg.log_batch(sae, batch, reconstruction, latent)
+                    #     if i == 0:
+                    #         lg.log_batch(sae, batch, reconstruction, latent)
 
-                    loss.backward()
-                    optimizer.step()
+                    #     st = time.time()
+                    #     # loss.backward()
+                    #     # optimizer.step()
+                    #     et = time.time()
+                    #     print(f"Time taken to backpropagate: {et - st:.2f} seconds")
 
 
             end = time.time()

@@ -434,7 +434,7 @@ class S3RCache():
     def _next_tensor(self):
         try:
             idx = self.readable_tensors.get(block=True)
-            t = self.buffer[idx].clone()
+            t = self.buffer[idx].clone().detach()
 
             self.writeable_tensors.put(idx, block=True)
 

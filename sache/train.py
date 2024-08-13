@@ -8,20 +8,6 @@ from sache.log import ProcessLogger
 from sache.constants import MB  
 
 
-# class TopKSAE(torch.nn.Module):
-
-
-class _SAEExpert(torch.nn.Module):
-    def __init__(self, n_features, hidden_size, device):
-        super(_SAEExpert, self).__init__()
-        self.enc = torch.nn.Parameter(torch.randn(hidden_size, n_features, device=device) / ((2**0.5)  / (hidden_size ** 0.5)))
-        self.dec = torch.nn.Parameter(torch.randn(n_features, hidden_size, device=device) / (n_features ** 0.5))
-        self.activation = torch.nn.ReLU()
-
-    def forward_descriptive(self, x):
-        features = self.activation(x @ self.enc)
-        return features @ self.dec, features
-
 # implement aux loss to make sure we use all SAE's equally
 class SwitchSAE(torch.nn.Module):
     def __init__(self, n_features, n_experts, hidden_size, device):
@@ -30,8 +16,16 @@ class SwitchSAE(torch.nn.Module):
         if n_features % n_experts != 0:
             raise ValueError(f'N features {n_features} must be divisible by number of experts {n_experts}')
 
-        self.expert_b = torch.nn.Parameter(torch.randn(hidden_size, device=device) * 0.01)
-        self.experts = torch.nn.ModuleList([_SAEExpert(n_features//n_experts, hidden_size, device) for _ in range(n_experts)])
+        self.expert_dim = n_features // n_experts
+        self.b_pre = torch.nn.Parameter(torch.randn(hidden_size, device=device) * 0.01)
+
+        self.enc = torch.nn.Parameter(
+            torch.randn(n_experts, hidden_size, self.expert_dim) / (2**0.5) / (hidden_size ** 0.5)
+        )
+        self.activation = torch.nn.ReLU()
+        self.dec = torch.nn.Parameter(
+            torch.randn(n_experts, self.expert_dim, hidden_size) / (self.expert_dim) ** 0.5
+        )
 
         self.router_b = torch.nn.Parameter(torch.randn(hidden_size, device=device) * 0.01)
         self.router = torch.nn.Parameter(torch.randn(hidden_size, n_experts, device=device) / (hidden_size ** 0.5))
@@ -39,18 +33,22 @@ class SwitchSAE(torch.nn.Module):
 
 
     def forward(self, activations): # activations: (batch_size, hidden_size)
-        recons, latent = self.forward_descriptive(activations)
+        recons, _ = self.forward_descriptive(activations)
         return recons
 
     def forward_descriptive(self, activations): # activations: (batch_size, hidden_size)
-
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
-        max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,)
+        expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
 
-        reconstruction, latent = self.experts[expert_idx].forward_descriptive(activations - self.expert_b) # (batch_size, hidden_size), (batch_size, n_features // n_experts)
-        reconstruction = reconstruction * max_prob + self.expert_b # (batch_size, n_features)
+        routed_enc = self.enc[expert_idx] # (batch_size, hidden_size, expert_dim)
+        routed_dec = self.dec[expert_idx] # (batch_size, expert_dim, hidden_size)
 
-        return reconstruction, latent # (batch_size, hidden_size), (batch_size, n_features // n_experts)
+        latent = self.activation(torch.bmm((activations - self.b_pre).unsqueeze(1), routed_enc)) # (batch_size, 1, expert_dim)
+        reconstruction = torch.bmm(latent, routed_dec) # (batch_size, 1, hidden_size)
+
+        reconstruction = expert_max_prob.unsqueeze(1) * reconstruction.squeeze(1) + self.b_pre # (batch_size, hidden_size)
+
+        return reconstruction, latent.squeeze(1) # (batch_size, hidden_size), (batch_size, expert_dim)
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, hidden_size, device):

@@ -10,14 +10,16 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache
-from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger
+from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
 def main():
     n_steps = 32 # 512
     l1_coefficient = 1e-3
     n_feats = 768
+    hidden_size=768
     bs = 1024
+    n_experts=32
     samples_per_file = 1024
     inner_bs = 128
 
@@ -30,7 +32,8 @@ def main():
     # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     train_logger = NOOPLogger()
     device = 'cuda'
-    sae = SAE(n_features=n_feats, hidden_size=768, device=device)
+    sae = SwitchSAE(n_features=n_feats,  hidden_size=hidden_size, device=device)
+    sae = SAE(n_features=n_feats, n_experts=n_experts, hidden_size=768, device=device)
 
     with train_logger as lg:
         lg.log({
@@ -38,6 +41,7 @@ def main():
             'l1_coefficient': l1_coefficient,
             'n_feats': n_feats,
             'bs': bs,
+            'n_experts': n_experts,
             'samples_per_file': samples_per_file,
             'inner_bs': inner_bs,
         })

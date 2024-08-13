@@ -10,53 +10,53 @@ from sache.constants import MB
 
 # implement aux loss to make sure we use all SAE's equally
 class SwitchSAE(torch.nn.Module):
-    def __init__(self, n_features, n_experts, hidden_size, device):
+    def __init__(self, n_features, n_experts, d_in, device):
         super(SwitchSAE, self).__init__()
 
         if n_features % n_experts != 0:
             raise ValueError(f'N features {n_features} must be divisible by number of experts {n_experts}')
 
         self.expert_dim = n_features // n_experts
-        self.b_pre = torch.nn.Parameter(torch.randn(hidden_size, device=device) * 0.01)
+        self.b_pre = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
         self.enc = torch.nn.Parameter(
-            torch.randn(n_experts, hidden_size, self.expert_dim) / (2**0.5) / (hidden_size ** 0.5)
+            torch.randn(n_experts, d_in, self.expert_dim) / (2**0.5) / (d_in ** 0.5)
         )
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(
-            torch.randn(n_experts, self.expert_dim, hidden_size) / (self.expert_dim) ** 0.5
+            torch.randn(n_experts, self.expert_dim, d_in) / (self.expert_dim) ** 0.5
         )
 
-        self.router_b = torch.nn.Parameter(torch.randn(hidden_size, device=device) * 0.01)
-        self.router = torch.nn.Parameter(torch.randn(hidden_size, n_experts, device=device) / (hidden_size ** 0.5))
+        self.router_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
+        self.router = torch.nn.Parameter(torch.randn(d_in, n_experts, device=device) / (d_in ** 0.5))
         self.softmax = torch.nn.Softmax(dim=-1)
 
 
-    def forward(self, activations): # activations: (batch_size, hidden_size)
+    def forward(self, activations): # activations: (batch_size, d_in)
         recons, _ = self.forward_descriptive(activations)
         return recons
 
-    def forward_descriptive(self, activations): # activations: (batch_size, hidden_size)
+    def forward_descriptive(self, activations): # activations: (batch_size, d_in)
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
 
-        routed_enc = self.enc[expert_idx] # (batch_size, hidden_size, expert_dim)
-        routed_dec = self.dec[expert_idx] # (batch_size, expert_dim, hidden_size)
+        routed_enc = self.enc[expert_idx] # (batch_size, d_in, expert_dim)
+        routed_dec = self.dec[expert_idx] # (batch_size, expert_dim, d_in)
 
         latent = self.activation(torch.bmm((activations - self.b_pre).unsqueeze(1), routed_enc)) # (batch_size, 1, expert_dim)
-        reconstruction = torch.bmm(latent, routed_dec) # (batch_size, 1, hidden_size)
+        reconstruction = torch.bmm(latent, routed_dec) # (batch_size, 1, d_in)
 
-        reconstruction = expert_max_prob.unsqueeze(1) * reconstruction.squeeze(1) + self.b_pre # (batch_size, hidden_size)
+        reconstruction = expert_max_prob.unsqueeze(1) * reconstruction.squeeze(1) + self.b_pre # (batch_size, d_in)
 
-        return reconstruction, latent.squeeze(1) # (batch_size, hidden_size), (batch_size, expert_dim)
+        return reconstruction, latent.squeeze(1) # (batch_size, d_in), (batch_size, expert_dim)
 
 class SAE(torch.nn.Module):
-    def __init__(self, n_features, hidden_size, device):
+    def __init__(self, n_features, d_in, device):
         super(SAE, self).__init__()
-        self.enc = torch.nn.Parameter(torch.randn(hidden_size, n_features, device=device) / np.sqrt(n_features))
+        self.enc = torch.nn.Parameter(torch.randn(d_in, n_features, device=device) / np.sqrt(n_features))
         self.enc_b = torch.nn.Parameter(torch.randn(n_features, device=device) * 0.01)
-        self.dec = torch.nn.Parameter(torch.randn(n_features, hidden_size, device=device) / np.sqrt(hidden_size))
-        self.dec_b = torch.nn.Parameter(torch.zeros(hidden_size, dtype=torch.float32, device=device))
+        self.dec = torch.nn.Parameter(torch.randn(n_features, d_in, device=device) / np.sqrt(d_in))
+        self.dec_b = torch.nn.Parameter(torch.zeros(d_in, dtype=torch.float32, device=device))
         self.activation = torch.nn.ReLU()
 
     def forward_descriptive(self, x):
@@ -72,11 +72,11 @@ def build_cache(local_cache_dir, batch_size, device):
     cache = RBatchingCache(cache=inner_cache, batch_size=batch_size)
     return cache
 
-def train(run_name, hidden_size, n_features, device, batch_size=32):
+def train(run_name, d_in, n_features, device, batch_size=32):
     logger = ProcessLogger(run_name)
     cache_dir = os.path.join(OUTER_CACHE_DIR, run_name, INNER_CACHE_DIR)
     cache = build_cache(cache_dir, batch_size=batch_size, device=device)
-    sae = SAE(n_features=n_features, hidden_size=hidden_size, device=device)
+    sae = SAE(n_features=n_features, d_in=d_in, device=device)
 
     n_batches = 10_000
     optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
@@ -211,7 +211,7 @@ class NOOPLogger:
 if __name__ == '__main__':
     train(
         run_name='active-camera', 
-        hidden_size=768, 
+        d_in=768, 
         n_features=384, 
         device='cuda', 
         batch_size=256

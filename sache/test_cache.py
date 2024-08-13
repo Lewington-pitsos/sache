@@ -68,7 +68,7 @@ def test_batched_cache(s3_client):
     metadata = {
         'batch_size': 32,
         'sequence_length': 16,
-        'hidden_dim': 9,
+        'd_in': 9,
         'batches_per_file': 1,
         'dtype': 'torch.float32',
         'shape': [32, 16, 9],
@@ -101,7 +101,7 @@ def test_s3_read_cache(s3_client):
     metadata = {
         'batch_size': 32,
         'sequence_length': 16,
-        'hidden_dim': 9,
+        'd_in': 9,
         'batches_per_file': 1,
         'dtype': 'torch.float32',
         'shape': [32, 16, 9],

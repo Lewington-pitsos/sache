@@ -93,7 +93,7 @@ class S3WCache():
                 'batch_size': activations.shape[0],
                 'sequence_length': activations.shape[1],
                 'dtype': str(activations.dtype),
-                'hidden_dim': activations.shape[2],
+                'd_in': activations.shape[2],
                 'bytes_per_file': activations.element_size() * activations.numel() * self.save_every,
                 'batches_per_file': self.save_every,
                 'shape': (activations.shape[0] * self.save_every, *activations.shape[1:])
@@ -105,8 +105,8 @@ class S3WCache():
                 print(f'Warning: batch size mismatch. Expected {self.metadata["batch_size"]}, got {activations.shape}')
             if activations.shape[1] != self.metadata['sequence_length']:
                 print(f'Warning: sequence length mismatch. Expected {self.metadata["sequence_length"]}, got {activations.shape}')
-            if activations.shape[2] != self.metadata['hidden_dim']:
-                print(f'Warning: hidden dim mismatch. Expected {self.metadata["hidden_dim"]}, got {activations.shape}')
+            if activations.shape[2] != self.metadata['d_in']:
+                print(f'Warning: input dimension mismatch. Expected {self.metadata["d_in"]}, got {activations.shape}')
             if str(activations.dtype) != self.metadata['dtype']:
                 print(f'Warning: dtype mismatch. Expected {self.metadata["dtype"]}, got {activations.dtype}')
 

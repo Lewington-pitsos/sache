@@ -17,7 +17,7 @@ def main():
     n_steps = 32 # 512
     l1_coefficient = 1e-3
     n_feats = 768
-    hidden_size=768
+    d_in=768
     bs = 1024
     n_experts=32
     samples_per_file = 1024
@@ -32,8 +32,8 @@ def main():
     # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     train_logger = NOOPLogger()
     device = 'cuda'
-    sae = SwitchSAE(n_features=n_feats,  hidden_size=hidden_size, device=device)
-    sae = SAE(n_features=n_feats, n_experts=n_experts, hidden_size=768, device=device)
+    # sae = SwitchSAE(n_features=n_feats,  d_in=d_in, device=device)
+    sae = SAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     with train_logger as lg:
         lg.log({

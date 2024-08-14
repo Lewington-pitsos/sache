@@ -20,11 +20,11 @@ class SwitchSAE(torch.nn.Module):
         self.b_pre = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
         self.enc = torch.nn.Parameter(
-            torch.randn(n_experts, d_in, self.expert_dim) / (2**0.5) / (d_in ** 0.5)
+            torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5)
         )
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(
-            torch.randn(n_experts, self.expert_dim, d_in) / (self.expert_dim) ** 0.5
+            torch.randn(n_experts, self.expert_dim, d_in, device=device) / (self.expert_dim) ** 0.5
         )
 
         self.router_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
@@ -39,10 +39,15 @@ class SwitchSAE(torch.nn.Module):
     def forward_descriptive(self, activations): # activations: (batch_size, d_in)
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
-
-        routed_enc = self.enc[expert_idx] # (batch_size, d_in, expert_dim)
-        routed_dec = self.dec[expert_idx] # (batch_size, expert_dim, d_in)
-
+        
+        with torch.no_grad():
+            expand_shape = (-1, self.enc.size(1), self.enc.size(2))
+            gather_index = expert_idx.view(-1, 1, 1).expand(expand_shape)
+            routed_enc = torch.gather(self.enc, 0, gather_index)
+            
+            gather_index = expert_idx.view(-1, 1, 1).expand(-1, self.dec.size(1), self.dec.size(2))
+            routed_dec = torch.gather(self.dec, 0, gather_index)
+      
         latent = self.activation(torch.bmm((activations - self.b_pre).unsqueeze(1), routed_enc)) # (batch_size, 1, expert_dim)
         reconstruction = torch.bmm(latent, routed_dec) # (batch_size, 1, d_in)
 

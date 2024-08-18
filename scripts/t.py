@@ -14,13 +14,14 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    n_steps = 32 # 512
+    n_steps = 512
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
     samples_per_file = 1024
+    device = 'cuda'
 
     run_name = 'merciless-citadel'
 
@@ -28,9 +29,8 @@ def main():
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
-    train_logger = NOOPLogger()
-    device = 'cuda'
+    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
+    # train_logger = NOOPLogger()
     sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     with train_logger as lg:

@@ -19,7 +19,7 @@ class SwitchSAE(torch.nn.Module):
         self.n_experts = n_experts
         self.device=device
         self.expert_dim = n_features // n_experts
-        self.b_pre = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
+        self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
         self.enc = torch.nn.Parameter(
             torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5)
@@ -56,7 +56,7 @@ class SwitchSAE(torch.nn.Module):
             full_latent[expert_mask] = latent
             full_recons[expert_mask] = reconstruction 
 
-        full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.b_pre # (batch_size, d_in)
+        full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.pre_b # (batch_size, d_in)
 
         return full_recons, full_latent # (batch_size, d_in), (batch_size, expert_dim)
 
@@ -131,13 +131,61 @@ class TrainLogger(ProcessLogger):
         self.log_mean_std = log_mean_std
 
     def log_sae(self, sae, info=None):
+        if isinstance(sae, SAE):
+            message = self._log_sae(sae)
+        elif isinstance(sae, SwitchSAE):
+            message = self._log_switch_sae(sae)
+        else:
+            raise ValueError(f'Unknown SAE type {type(sae)}')
+
+        if info is not None:
+            for k in info.keys():
+                if k in message:
+                    raise ValueError(f'Key {k} already exists in message', message, info)
+            message.update(info)
+        
+        self.log(message)
+
+    def _log_switch_sae(self, sae, info=None):
+        with torch.no_grad():
+            ecounts, eedges = get_histogram(sae.enc)
+            dcounts, dedges = get_histogram(sae.dec)
+            routercounts, routeredges = get_histogram(sae.router)
+            broutercounts, brouteredges = get_histogram(sae.router_b, bins=25)
+            bprecounts, bpreedges = get_histogram(sae.pre_b, bins=25)
+            
+        return {
+            'event': 'sae',
+            'enc_experts': { 
+                'counts': ecounts,
+                'edges': eedges
+            },
+            'pre_b': {
+                'counts': bprecounts,
+                'edges': bpreedges
+            },
+            'dec_experts': {
+                'counts': dcounts,
+                'edges': dedges
+            },
+            'router_b': {
+                'counts': broutercounts,
+                'edges': brouteredges
+            },
+            'router': {
+                'counts': routercounts,
+                'edges': routeredges
+            }
+        }
+
+    def _log_sae(self, sae, info=None):
         with torch.no_grad():
             ecounts, eedges = get_histogram(sae.enc)
             ebcounts, ebedges = get_histogram(sae.enc_b, bins=25)
             dcounts, dedges = get_histogram(sae.dec)
             dbcounts, dbedges = get_histogram(sae.dec_b, bins=25)
             
-        message = {
+        return {
             'event': 'sae',
             'enc': { 
                 'counts': ecounts,
@@ -156,14 +204,6 @@ class TrainLogger(ProcessLogger):
                 'edges': dbedges
             }
         }
-
-        if info is not None:
-            for k in info.keys():
-                if k in message:
-                    raise ValueError(f'Key {k} already exists in message', message, info)
-            message.update(info)
-        
-        self.log(message)
 
     def log_loss(self, mse, l1, loss, batch, latent):
         with torch.no_grad():

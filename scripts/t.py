@@ -18,10 +18,10 @@ def main():
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
-    bs = 128
+    inner_bs = 8192 * 4
+    bs = inner_bs * 4
     n_experts = 32
     samples_per_file = 1024
-    inner_bs = 8
 
     run_name = 'merciless-citadel'
 
@@ -32,7 +32,6 @@ def main():
     # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     train_logger = NOOPLogger()
     device = 'cuda'
-    # sae = SwitchSAE(n_features=n_feats,  d_in=d_in, device=device)
     sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     with train_logger as lg:
@@ -55,26 +54,26 @@ def main():
         overall_start = time.time()
         start = time.time()
         
-        # no grad
         for j, t in enumerate(cache):
-            for i in range(0, samples_per_file, bs):
+            t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence.
+            for i in range(0, t.shape[0], bs):
                 outer_batch = t[i:i+bs].to(device)
                 for k in range(0, bs, inner_bs):
-                    optimizer.zero_grad()
+                    # optimizer.zero_grad()
                     batch = outer_batch[k:k+inner_bs]
                     batch = normalizer.normalize(batch)
 
                     reconstruction, latent = sae.forward_descriptive(batch)
-                    mse = ((batch - reconstruction) ** 2).sum(-1).mean()
-                    l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                    loss = mse + l1
-                    lg.log_loss(mse, l1, loss, batch, latent)
+                    # mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                    # l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
+                    # loss = mse + l1
+                    # lg.log_loss(mse, l1, loss, batch, latent)
 
-                    if i == 0:
-                        lg.log_batch(sae, batch, reconstruction, latent)
+                    # if i == 0:
+                    #     lg.log_batch(sae, batch, reconstruction, latent)
 
-                    loss.backward()
-                    optimizer.step()
+                    # loss.backward()
+                    # optimizer.step()
 
 
             end = time.time()

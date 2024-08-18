@@ -14,7 +14,7 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    n_steps = 512
+    n_steps = 700 # 648 is the total
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
@@ -60,10 +60,14 @@ def main():
                 batch = normalizer.normalize(batch)
 
                 reconstruction, latent = sae.forward_descriptive(batch)
-                mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                mse = ((batch - reconstruction) ** 2).sum(0).mean()
+                total_variance = ((batch - batch.mean(0)) ** 2).sum(0).mean()
+                scaled_mse = mse / total_variance
+                
                 l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                loss = mse + l1
-                lg.log_loss(mse, l1, loss, batch, latent)
+                
+                loss = scaled_mse + l1
+                lg.log_loss(mse, scaled_mse, l1, loss, batch, latent)
 
                 if k == 0:
                     lg.log_batch(sae, batch, reconstruction, latent)

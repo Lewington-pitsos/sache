@@ -18,9 +18,9 @@ def main():
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
-    inner_bs = 8192 * 4
+    inner_bs = 8192 * 32
     bs = inner_bs * 4
-    n_experts = 32
+    n_experts = 64
     samples_per_file = 1024
 
     run_name = 'merciless-citadel'
@@ -56,24 +56,22 @@ def main():
         
         for j, t in enumerate(cache):
             t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence.
-            for i in range(0, t.shape[0], bs):
-                outer_batch = t[i:i+bs].to(device)
-                for k in range(0, bs, inner_bs):
-                    # optimizer.zero_grad()
-                    batch = outer_batch[k:k+inner_bs]
-                    batch = normalizer.normalize(batch)
+            for k in range(0, t.shape[0], inner_bs):
+                optimizer.zero_grad()
+                batch = t[k:k+inner_bs].to(device)
+                batch = normalizer.normalize(batch)
 
-                    reconstruction, latent = sae.forward_descriptive(batch)
-                    # mse = ((batch - reconstruction) ** 2).sum(-1).mean()
-                    # l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                    # loss = mse + l1
-                    # lg.log_loss(mse, l1, loss, batch, latent)
+                reconstruction, latent = sae.forward_descriptive(batch)
+                mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
+                loss = mse + l1
+                lg.log_loss(mse, l1, loss, batch, latent)
 
-                    # if i == 0:
-                    #     lg.log_batch(sae, batch, reconstruction, latent)
+                if k == 0:
+                    lg.log_batch(sae, batch, reconstruction, latent)
 
-                    # loss.backward()
-                    # optimizer.step()
+                loss.backward()
+                optimizer.step()
 
 
             end = time.time()

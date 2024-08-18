@@ -16,6 +16,8 @@ class SwitchSAE(torch.nn.Module):
         if n_features % n_experts != 0:
             raise ValueError(f'N features {n_features} must be divisible by number of experts {n_experts}')
 
+        self.n_experts = n_experts
+        self.device=device
         self.expert_dim = n_features // n_experts
         self.b_pre = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
@@ -39,21 +41,24 @@ class SwitchSAE(torch.nn.Module):
     def forward_descriptive(self, activations): # activations: (batch_size, d_in)
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
-        
-        with torch.no_grad():
-            expand_shape = (-1, self.enc.size(1), self.enc.size(2))
-            gather_index = expert_idx.view(-1, 1, 1).expand(expand_shape)
-            routed_enc = torch.gather(self.enc, 0, gather_index)
-            
-            gather_index = expert_idx.view(-1, 1, 1).expand(-1, self.dec.size(1), self.dec.size(2))
-            routed_dec = torch.gather(self.dec, 0, gather_index)
-      
-        latent = self.activation(torch.bmm((activations - self.b_pre).unsqueeze(1), routed_enc)) # (batch_size, 1, expert_dim)
-        reconstruction = torch.bmm(latent, routed_dec) # (batch_size, 1, d_in)
 
-        reconstruction = expert_max_prob.unsqueeze(1) * reconstruction.squeeze(1) + self.b_pre # (batch_size, d_in)
+        full_recons = torch.zeros_like(activations) # (batch_size, d_in)
+        full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device) # (batch_size, expert_dim)
+        for expert_id in range(self.n_experts):
+            expert_mask = expert_idx == expert_id # (n_to_expert,)
+            expert_input = activations[expert_mask] 
 
-        return reconstruction, latent.squeeze(1) # (batch_size, d_in), (batch_size, expert_dim)
+            routed_enc = self.enc[expert_id] # (d_in, expert_dim)
+            routed_dec = self.dec[expert_id] # (expert_dim, d_in)
+            latent = self.activation(expert_input @ routed_enc) # (n_to_expert, expert_dim)
+            reconstruction = latent @ routed_dec # (n_to_expert, d_in)
+
+            full_latent[expert_mask] = latent
+            full_recons[expert_mask] = reconstruction 
+
+        full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.b_pre # (batch_size, d_in)
+
+        return full_recons, full_latent # (batch_size, d_in), (batch_size, expert_dim)
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):

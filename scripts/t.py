@@ -18,9 +18,8 @@ def main():
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
-    inner_bs = 8192 * 32
-    bs = inner_bs * 4
-    n_experts = 64
+    batch_size = 8192 * 32 
+    n_experts = 32
     samples_per_file = 1024
 
     run_name = 'merciless-citadel'
@@ -39,10 +38,9 @@ def main():
             'n_steps': n_steps,
             'l1_coefficient': l1_coefficient,
             'n_feats': n_feats,
-            'bs': bs,
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
-            'inner_bs': inner_bs,
+            'inner_bs': batch_size,
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
@@ -56,9 +54,9 @@ def main():
         
         for j, t in enumerate(cache):
             t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence.
-            for k in range(0, t.shape[0], inner_bs):
+            for k in range(0, t.shape[0], batch_size):
                 optimizer.zero_grad()
-                batch = t[k:k+inner_bs].to(device)
+                batch = t[k:k+batch_size].to(device)
                 batch = normalizer.normalize(batch)
 
                 reconstruction, latent = sae.forward_descriptive(batch)

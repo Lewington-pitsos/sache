@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 
+from sache.kernel import TritonDecoderAutograd
+
 class SwitchSAE(torch.nn.Module):
     def __init__(self, n_features, n_experts, d_in, device):
         super(SwitchSAE, self).__init__()
@@ -64,20 +66,27 @@ class TopKSwitchSAE(SwitchSAE):
 
         if self.efficient:
             self._decode = self._triton_decode
+            self.dec = torch.nn.Parameter(self.dec.contiguous()) # requried for triton kernels
         else:
             self._decode = self._eagre_decode
 
     def _encode(self, pre_activation):
-        return torch.topk(pre_activation, k=self.k, dim=-1)
+        return (torch.topk(pre_activation, k=self.k, dim=-1), pre_activation)
 
-    def _triton_decode(self, topk, dec):
-        return self._eagre_decode(topk, dec)
+    def _triton_decode(self, latent_info, dec):
+        topk, pre_activation = latent_info
+        
+        recons = TritonDecoderAutograd.apply(topk.indices, topk.values, dec)
 
-    def _eagre_decode(self, topk, dec):
+        return pre_activation, recons
+
+    def _eagre_decode(self, latent_info, dec):
+        topk, pre_activation = latent_info
+
         latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
         latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
 
-        return latent, latent @ dec
+        return pre_activation, latent @ dec
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):

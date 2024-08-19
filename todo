@@ -1,4 +1,3 @@
-- init decoder as transpose of encoder
 - test topk eager vs kernels
 - track number of dead latents
 - aux loss to make sure experts are used equally

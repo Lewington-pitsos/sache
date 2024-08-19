@@ -176,6 +176,7 @@ def triton_sparse_dense_matmul(
     sparse_values: torch.Tensor,
     dense: torch.Tensor,
 ) -> torch.Tensor:
+    print('dense shape', dense.shape)
     """
     calculates sparse @ dense (i.e reducing along the uncollated dimension of sparse)
     dense must be contiguous along dim 0 (in other words, dense.T is contiguous)
@@ -396,7 +397,7 @@ class TritonDecoderAutograd(torch.autograd.Function):
     @staticmethod
     def forward(ctx, sparse_indices, sparse_values, decoder_weight):
         ctx.save_for_backward(sparse_indices, sparse_values, decoder_weight)
-        return triton_sparse_dense_matmul(sparse_indices, sparse_values, decoder_weight.T)
+        return triton_sparse_dense_matmul(sparse_indices, sparse_values, decoder_weight)
 
     @staticmethod
     def backward(ctx, grad_output):

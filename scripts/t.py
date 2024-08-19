@@ -14,14 +14,14 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    n_steps = 128 # 647 is the total
+    n_steps = 700 # 647 is the total
     k = 32
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
-    learning_rate = 1e-3
+    learning_rate = 1e-4
     samples_per_file = 1024
     device = 'cuda'
 
@@ -33,7 +33,7 @@ def main():
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     # train_logger = NOOPLogger()
-    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
+    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     with train_logger as lg:
         lg.log({
@@ -65,8 +65,8 @@ def main():
 
                 reconstruction, latent = sae.forward_descriptive(batch)
                 mse = ((batch - reconstruction) ** 2).sum(0).mean()
-                total_variance = ((batch - batch.mean(0)) ** 2).sum(0).mean()
-                scaled_mse = mse / total_variance
+                mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(0).mean()
+                scaled_mse = mse / mean_pred_mse
                 
                 loss = scaled_mse
                 lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=latent)

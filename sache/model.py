@@ -66,7 +66,7 @@ class TopKSwitchSAE(SwitchSAE):
 
         if self.efficient:
             self._decode = self._triton_decode
-            self.dec = torch.nn.Parameter(self.dec.contiguous()) # requried for triton kernels
+            self.dec = torch.nn.Parameter(self.dec.contiguous().mT) # requried for triton kernels
         else:
             self._decode = self._eagre_decode
 

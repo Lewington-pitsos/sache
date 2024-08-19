@@ -14,6 +14,7 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
+    k = 20
     n_steps = 700 # 648 is the total
     l1_coefficient = 1e-3
     n_feats = 24576
@@ -31,10 +32,11 @@ def main():
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     # train_logger = NOOPLogger()
-    sae = TopKSwitchSAE(k=20, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
+    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     with train_logger as lg:
         lg.log({
+            'k': k,
             'n_steps': n_steps,
             'l1_coefficient': l1_coefficient,
             'n_feats': n_feats,

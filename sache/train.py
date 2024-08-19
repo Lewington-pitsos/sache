@@ -6,123 +6,12 @@ import numpy as np
 from sache.cache import RBatchingCache, RCache, INNER_CACHE_DIR, OUTER_CACHE_DIR
 from sache.log import ProcessLogger
 from sache.constants import MB  
+from sache.model import SAE, SwitchSAE, TopKSwitchSAE
 
-class SwitchSAE(torch.nn.Module):
-    def __init__(self, n_features, n_experts, d_in, device):
-        super(SwitchSAE, self).__init__()
-
-        if n_features % n_experts != 0:
-            raise ValueError(f'N features {n_features} must be divisible by number of experts {n_experts}')
-
-        self.n_experts = n_experts
-        self.device=device
-        self.expert_dim = n_features // n_experts
-        self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
-
-        self.enc = torch.nn.Parameter(
-            torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5)
-        )
-        self.activation = torch.nn.ReLU()
-        self.dec = torch.nn.Parameter(
-            torch.randn(n_experts, self.expert_dim, d_in, device=device) / (self.expert_dim) ** 0.5
-        )
-
-        self.router_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
-        self.router = torch.nn.Parameter(torch.randn(d_in, n_experts, device=device) / (d_in ** 0.5))
-        self.softmax = torch.nn.Softmax(dim=-1)
-
-
-    def forward(self, activations): # activations: (batch_size, d_in)
-        recons, _ = self.forward_descriptive(activations)
-        return recons
-
-    def _encode(self, pre_activation):
-        return self.activation(pre_activation)
-
-    def _decode(self, latent, dec):
-        return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
-
-    def forward_descriptive(self, activations): # activations: (batch_size, d_in)
-        expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
-        expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
-
-        full_recons = torch.zeros_like(activations) # (batch_size, d_in)
-        full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device) # (batch_size, expert_dim)
-        for expert_id in range(self.n_experts):
-            expert_mask = expert_idx == expert_id # (n_to_expert,)
-            expert_input = activations[expert_mask] 
-
-            routed_enc = self.enc[expert_id] # (d_in, expert_dim)
-            routed_dec = self.dec[expert_id] # (expert_dim, d_in)
-            latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
-            latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, d_in)
-
-            full_latent[expert_mask] = latent
-            full_recons[expert_mask] = reconstruction 
-
-        full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.pre_b # (batch_size, d_in)
-
-        return full_recons, full_latent # (batch_size, d_in), (batch_size, expert_dim)
-
-class TopKSwitchSAE(SwitchSAE):
-    def __init__(self, k, *args, **kwargs):
-        super(TopKSwitchSAE, self).__init__(*args, **kwargs)
-        self.k = k
-
-    def _encode(self, pre_activation):
-        return torch.topk(pre_activation, k=self.k, dim=-1)
-
-    def _decode(self, topk, dec):
-        latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
-        latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
-
-        return latent, latent @ dec
-
-class SAE(torch.nn.Module):
-    def __init__(self, n_features, d_in, device):
-        super(SAE, self).__init__()
-        self.enc = torch.nn.Parameter(torch.randn(d_in, n_features, device=device) / np.sqrt(n_features))
-        self.enc_b = torch.nn.Parameter(torch.randn(n_features, device=device) * 0.01)
-        self.dec = torch.nn.Parameter(torch.randn(n_features, d_in, device=device) / np.sqrt(d_in))
-        self.dec_b = torch.nn.Parameter(torch.zeros(d_in, dtype=torch.float32, device=device))
-        self.activation = torch.nn.ReLU()
-
-    def forward_descriptive(self, x):
-        features = self.activation(x @ self.enc + self.enc_b) 
-        return features @ self.dec + self.dec_b, features
-
-    def forward(self, x):
-        recon, _ = self.forward_descriptive(x)
-        return recon
-    
 def build_cache(local_cache_dir, batch_size, device):
     inner_cache = RCache(local_cache_dir, device, buffer_size=8)
     cache = RBatchingCache(cache=inner_cache, batch_size=batch_size)
     return cache
-
-def train(run_name, d_in, n_features, device, batch_size=32):
-    logger = ProcessLogger(run_name)
-    cache_dir = os.path.join(OUTER_CACHE_DIR, run_name, INNER_CACHE_DIR)
-    cache = build_cache(cache_dir, batch_size=batch_size, device=device)
-    sae = SAE(n_features=n_features, d_in=d_in, device=device)
-
-    n_batches = 10_000
-    optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
-
-    for i, activations in tqdm(enumerate(cache), total=n_batches):
-        optimizer.zero_grad()
-
-        reconstruction, features = sae(activations)
-
-        rmse = torch.sqrt(torch.mean((activations - reconstruction) ** 2))
-        
-        rmse.backward()
-        optimizer.step()
-
-        logger.log({'event': 'training_batch', 'rmse': rmse.item()})    
-
-        if i > n_batches:
-            break
 
 def get_histogram(tensor, bins=50):
     hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
@@ -151,6 +40,8 @@ class TrainLogger(ProcessLogger):
     def log_sae(self, sae, info=None):
         if isinstance(sae, SAE):
             message = self._log_sae(sae)
+        elif isinstance(sae, TopKSwitchSAE):
+            message = self._log_switch_sae(sae)
         elif isinstance(sae, SwitchSAE):
             message = self._log_switch_sae(sae)
         else:
@@ -277,13 +168,3 @@ class NOOPLogger:
         # This will catch any undefined attribute or method calls.
         # It returns a lambda that does nothing, making every call a no-op.
         return lambda *args, **kwargs: None
-
-
-if __name__ == '__main__':
-    train(
-        run_name='active-camera', 
-        d_in=768, 
-        n_features=384, 
-        device='cuda', 
-        batch_size=256
-    )

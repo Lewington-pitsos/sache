@@ -114,11 +114,12 @@ class TrainLogger(ProcessLogger):
             }
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
                 'mse': mse.item(),
+                'dead_latent_pct': dead_pct.item(),
                 'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
                 'loss': loss.item()

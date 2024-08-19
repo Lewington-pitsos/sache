@@ -27,7 +27,7 @@ class SwitchSAE(torch.nn.Module):
 
 
     def forward(self, activations): # activations: (batch_size, d_in)
-        recons, _ = self.forward_descriptive(activations)
+        recons, _, _ = self.forward_descriptive(activations)
         return recons
 
     def _encode(self, pre_activation):
@@ -41,22 +41,25 @@ class SwitchSAE(torch.nn.Module):
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
 
         full_recons = torch.zeros_like(activations) # (batch_size, d_in)
-        full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device) # (batch_size, expert_dim)
+        full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
+        was_active = torch.zeros(self.n_experts, self.expert_dim, device=self.device, requires_grad=False) # (n_experts, expert_dim)
         for expert_id in range(self.n_experts):
-            expert_mask = expert_idx == expert_id # (n_to_expert,)
-            expert_input = activations[expert_mask] 
+            if expert_id in expert_idx:
+                expert_mask = expert_idx == expert_id # (n_to_expert,)
+                expert_input = activations[expert_mask] 
 
-            routed_enc = self.enc[expert_id] # (d_in, expert_dim)
-            routed_dec = self.dec[expert_id] # (expert_dim, d_in)
-            latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
-            latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, d_in)
+                routed_enc = self.enc[expert_id] # (d_in, expert_dim)
+                routed_dec = self.dec[expert_id] # (expert_dim, d_in)
+                latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
+                latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
-            full_latent[expert_mask] = latent
-            full_recons[expert_mask] = reconstruction 
+                full_latent[expert_mask] = latent
+                full_recons[expert_mask] = reconstruction 
+                was_active[expert_id] = (torch.max(latent, dim=0).values > 1e-3) * 1
 
         full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.pre_b # (batch_size, d_in)
 
-        return full_recons, full_latent # (batch_size, d_in), (batch_size, expert_dim)
+        return full_recons, full_latent, was_active # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
 
 class TopKSwitchSAE(SwitchSAE):
     def __init__(self, k, *args, efficient=False, **kwargs):
@@ -86,7 +89,7 @@ class TopKSwitchSAE(SwitchSAE):
         latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
         latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
 
-        return pre_activation, latent @ dec
+        return latent, latent @ dec
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):

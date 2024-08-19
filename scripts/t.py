@@ -23,6 +23,7 @@ def main():
     n_experts = 32
     learning_rate = 1e-4
     samples_per_file = 1024
+    latent_lifespan = 1000
     device = 'cuda'
 
     run_name = 'merciless-citadel'
@@ -34,6 +35,8 @@ def main():
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     # train_logger = NOOPLogger()
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
+
+    dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device)
 
     with train_logger as lg:
         lg.log({
@@ -63,13 +66,21 @@ def main():
                 batch = t[k:k+batch_size].to(device)
                 batch = normalizer.normalize(batch)
 
-                reconstruction, latent = sae.forward_descriptive(batch)
+                reconstruction, latent, was_active = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                
+                with torch.no_grad():
+                    dead_latents[was_active] = 0
+                    dead_latents += 1
+
+                dead_latent_pct = (dead_latents >= latent_lifespan).sum() / dead_latents.numel()
+
+                
                 mse = ((batch - reconstruction) ** 2).sum(0).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(0).mean()
                 scaled_mse = mse / mean_pred_mse
                 
                 loss = scaled_mse
-                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=latent)
+                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=latent, dead_pct=dead_latent_pct)
 
                 if k == 0:
                     lg.log_batch(sae, batch, reconstruction, latent)

@@ -17,9 +17,7 @@ class SwitchSAE(torch.nn.Module):
             torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5)
         )
         self.activation = torch.nn.ReLU()
-        self.dec = torch.nn.Parameter(
-            torch.randn(n_experts, self.expert_dim, d_in, device=device) / (self.expert_dim) ** 0.5
-        )
+        self.dec = torch.nn.Parameter(self.enc.mT.clone())
 
         self.router_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
         self.router = torch.nn.Parameter(torch.randn(d_in, n_experts, device=device) / (d_in ** 0.5))

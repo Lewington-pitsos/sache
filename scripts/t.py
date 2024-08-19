@@ -14,13 +14,14 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    k = 20
-    n_steps = 700 # 648 is the total
+    n_steps = 128 # 647 is the total
+    k = 32
     l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
+    learning_rate = 1e-3
     samples_per_file = 1024
     device = 'cuda'
 
@@ -43,9 +44,10 @@ def main():
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
             'inner_bs': batch_size,
+            'learning_rate': learning_rate,
         })
         lg.log_sae(sae)
-        optimizer = torch.optim.Adam(sae.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
         cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)

@@ -8,7 +8,6 @@ def test_eagre_and_triton_decode_get_same_results():
     batch_size = 16
     n_features = 64
 
-
     triton_sae = TopKSwitchSAE(k=k, n_features=n_features, n_experts=n_experts, d_in=d_in, device='cpu', efficient=True)
     triton_sae.eval()
     

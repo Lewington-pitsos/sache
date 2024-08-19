@@ -7,8 +7,6 @@ from sache.cache import RBatchingCache, RCache, INNER_CACHE_DIR, OUTER_CACHE_DIR
 from sache.log import ProcessLogger
 from sache.constants import MB  
 
-
-# implement aux loss to make sure we use all SAE's equally
 class SwitchSAE(torch.nn.Module):
     def __init__(self, n_features, n_experts, d_in, device):
         super(SwitchSAE, self).__init__()
@@ -38,6 +36,12 @@ class SwitchSAE(torch.nn.Module):
         recons, _ = self.forward_descriptive(activations)
         return recons
 
+    def _encode(self, pre_activation):
+        return self.activation(pre_activation)
+
+    def _decode(self, latent, dec):
+        return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
+
     def forward_descriptive(self, activations): # activations: (batch_size, d_in)
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
@@ -50,8 +54,8 @@ class SwitchSAE(torch.nn.Module):
 
             routed_enc = self.enc[expert_id] # (d_in, expert_dim)
             routed_dec = self.dec[expert_id] # (expert_dim, d_in)
-            latent = self.activation(expert_input @ routed_enc) # (n_to_expert, expert_dim)
-            reconstruction = latent @ routed_dec # (n_to_expert, d_in)
+            latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
+            latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
             full_latent[expert_mask] = latent
             full_recons[expert_mask] = reconstruction 
@@ -59,6 +63,20 @@ class SwitchSAE(torch.nn.Module):
         full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.pre_b # (batch_size, d_in)
 
         return full_recons, full_latent # (batch_size, d_in), (batch_size, expert_dim)
+
+class TopKSwitchSAE(SwitchSAE):
+    def __init__(self, k, *args, **kwargs):
+        super(TopKSwitchSAE, self).__init__(*args, **kwargs)
+        self.k = k
+
+    def _encode(self, pre_activation):
+        return torch.topk(pre_activation, k=self.k, dim=-1)
+
+    def _decode(self, topk, dec):
+        latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
+        latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
+
+        return latent, latent @ dec
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):
@@ -205,12 +223,11 @@ class TrainLogger(ProcessLogger):
             }
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent):
+    def log_loss(self, mse, l1, loss, batch, latent):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
                 'mse': mse.item(),
-                'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
                 'L1': l1.item(),
                 'loss': loss.item()

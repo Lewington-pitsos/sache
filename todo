@@ -1,0 +1,12 @@
+- init decoder as transpose of encoder
+- get topk working
+- track number of dead latents
+- aux loss to make sure experts are used equally
+
+
+# Anthropic June Update
+- TopK (and gated) SAE's do indeed seem to be a pareto improvement over L1 saes
+
+# Anthropic July Update
+- it seems that for many concepts a features alone is not enough to pick them out all of the time. You may need multiple features firing together, which may by themselves be uninterpretable.
+- when we talk about "linear representation theory" the most important aspect is that features inside neural networks (which probably consist of multiple neurons) be subject to the genreal mathematical idea of linearity, in particular that they can be "scaled" and "added" to one another in a way that is meaningful. E.g. the classic king + woman = queen 

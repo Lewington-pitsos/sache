@@ -10,7 +10,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache
-from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE
+from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
 def main():
@@ -31,7 +31,7 @@ def main():
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
     # train_logger = NOOPLogger()
-    sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
+    sae = TopKSwitchSAE(k=20, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     with train_logger as lg:
         lg.log({
@@ -64,10 +64,8 @@ def main():
                 total_variance = ((batch - batch.mean(0)) ** 2).sum(0).mean()
                 scaled_mse = mse / total_variance
                 
-                l1 = latent.norm(1.0, dim=-1).mean() * l1_coefficient
-                
-                loss = scaled_mse + l1
-                lg.log_loss(mse, scaled_mse, l1, loss, batch, latent)
+                loss = scaled_mse
+                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=latent)
 
                 if k == 0:
                     lg.log_batch(sae, batch, reconstruction, latent)

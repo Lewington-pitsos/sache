@@ -223,16 +223,19 @@ class TrainLogger(ProcessLogger):
             }
         }
 
-    def log_loss(self, mse, l1, loss, batch, latent):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
                 'mse': mse.item(),
+                'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
-                'L1': l1.item(),
                 'loss': loss.item()
             }
-                    
+
+            if l1 is not None:
+                message['l1'] = l1.item()
+
             if self.log_mean_std:
                 message.update({
                     'input_mean': batch.mean(dim=(0, 1)).cpu().numpy().tolist(), 

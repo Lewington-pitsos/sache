@@ -23,7 +23,7 @@ def main():
     n_experts = 32
     learning_rate = 1e-4
     samples_per_file = 1024
-    latent_lifespan = 1000
+    tokens_till_latent_dies = 10_000_000
     device = 'cuda'
 
     run_name = 'merciless-citadel'
@@ -60,7 +60,7 @@ def main():
         start = time.time()
         
         for j, t in enumerate(cache):
-            t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence.
+            t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence, each sample is a token now.
             for k in range(0, t.shape[0], batch_size):
                 optimizer.zero_grad()
                 batch = t[k:k+batch_size].to(device)
@@ -70,10 +70,9 @@ def main():
                 
                 with torch.no_grad():
                     dead_latents[was_active] = 0
-                    dead_latents += 1
+                    dead_latents += batch_size
 
-                dead_latent_pct = (dead_latents >= latent_lifespan).sum() / dead_latents.numel()
-
+                dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
                 
                 mse = ((batch - reconstruction) ** 2).sum(0).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(0).mean()

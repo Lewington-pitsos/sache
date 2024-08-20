@@ -42,7 +42,7 @@ class SwitchSAE(torch.nn.Module):
 
         full_recons = torch.zeros_like(activations) # (batch_size, d_in)
         full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
-        was_active = torch.zeros(self.n_experts, self.expert_dim, device=self.device, requires_grad=False) # (n_experts, expert_dim)
+        was_active = torch.zeros(self.n_experts, self.expert_dim, device=self.device, requires_grad=False, dtype=bool) # (n_experts, expert_dim)
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
                 expert_mask = expert_idx == expert_id # (n_to_expert,)
@@ -55,7 +55,7 @@ class SwitchSAE(torch.nn.Module):
 
                 full_latent[expert_mask] = latent
                 full_recons[expert_mask] = reconstruction 
-                was_active[expert_id] = (torch.max(latent, dim=0).values > 1e-3) * 1
+                was_active[expert_id] = torch.max(latent, dim=0).values > 1e-3
 
         full_recons = expert_max_prob.unsqueeze(-1) * full_recons + self.pre_b # (batch_size, d_in)
 

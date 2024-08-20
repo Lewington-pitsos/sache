@@ -64,8 +64,8 @@ def download_logs(bucket_name=BUCKET_NAME, s3_folder_prefix=LOG_DIR, local_downl
     if 'Contents' in response:
         for item in response['Contents']:
             file_path = item['Key']
-            local_file_path = os.path.join(local_download_path, file_path[len(s3_folder_prefix):])
-
+            local_file_path = os.path.join(local_download_path, file_path[len(s3_folder_prefix) + 1:])
+            
             # Create local directory structure if it does not exist
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
 

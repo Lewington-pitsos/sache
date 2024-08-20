@@ -66,10 +66,11 @@ def main():
                 batch = t[k:k+batch_size].to(device)
                 batch = normalizer.normalize(batch)
 
-                reconstruction, latent, was_active = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
-                
+                output = sae.forward(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                reconstruction = output['reconstruction']
+
                 with torch.no_grad():
-                    dead_latents[was_active] = 0
+                    dead_latents[output['active_latents']] = 0
                     dead_latents += batch_size
 
                 dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
@@ -79,10 +80,10 @@ def main():
                 scaled_mse = mse / mean_pred_mse
                 
                 loss = scaled_mse
-                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=latent, dead_pct=dead_latent_pct)
+                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=output['latent'], dead_pct=dead_latent_pct)
 
                 if k == 0:
-                    lg.log_batch(sae, batch, reconstruction, latent)
+                    lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])
 
                 loss.backward()
                 optimizer.step()

@@ -1,11 +1,9 @@
 import os
 import torch
-from tqdm import tqdm
 import numpy as np
 
-from sache.cache import RBatchingCache, RCache, INNER_CACHE_DIR, OUTER_CACHE_DIR
+from sache.cache import RBatchingCache, RCache
 from sache.log import ProcessLogger
-from sache.constants import MB  
 from sache.model import SAE, SwitchSAE, TopKSwitchSAE
 
 def build_cache(local_cache_dir, batch_size, device):
@@ -33,9 +31,10 @@ class MeanStdNormalizer():
             return (x - self.mean) / self.std
 
 class TrainLogger(ProcessLogger):
-    def __init__(self, run_name, log_mean_std=False, *args, **kwargs):
+    def __init__(self, run_name, log_mean_std=False, max_sample=1024, *args, **kwargs):
         super(TrainLogger, self).__init__(run_name, *args, **kwargs)
         self.log_mean_std = log_mean_std
+        self.max_sample = max_sample
 
     def log_sae(self, sae, info=None):
         if isinstance(sae, SAE):
@@ -136,18 +135,25 @@ class TrainLogger(ProcessLogger):
 
             self.log(message)
 
-    def log_batch(self, sae, batch, reconstruction, latent):
+    def log_batch(self, sae, batch, reconstruction, latent, experts_chosen):
+        batch = batch[:self.max_sample]
+        reconstruction = reconstruction[:self.max_sample]
+        latent = latent[:self.max_sample]
+        experts_chosen = experts_chosen[:self.max_sample]
+
         with torch.no_grad():
             binput, einput = get_histogram(batch)
             brecon, erecon = get_histogram(reconstruction)
             bdelta, edelta = get_histogram(batch - reconstruction)
             blatent, elatent = get_histogram(latent)
+            bexperts, eexperts = get_histogram(experts_chosen, bins=sae.n_experts)
 
         info = {
             'input_hist': { 'counts': binput, 'edges': einput},
             'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
             'delta_hist': { 'counts': bdelta, 'edges': edelta},
             'latent_hist': { 'counts': blatent, 'edges': elatent},
+            'experts_chosen_hist': { 'counts': bexperts, 'edges': eexperts},
         }
 
         self.log_sae(sae, info=info)

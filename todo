@@ -1,9 +1,8 @@
 - log to wandb
-- track number of dead latents
 - aux loss to make sure experts are used equally
 - dead latents are way too high
 - prevent certain experts from dominating the others (currently 3 are being chosen most of the time)
-
+- every batch I'm shuffling
 
 # Anthropic June Update
 - TopK (and gated) SAE's do indeed seem to be a pareto improvement over L1 saes

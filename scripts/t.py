@@ -16,12 +16,12 @@ from sache.constants import MB, BUCKET_NAME
 def main():
     n_steps = 700 # 647 is the total
     k = 32
-    l1_coefficient = 1e-3
     n_feats = 24576
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
-    learning_rate = 2e-4
+    privilege_weighting = 1e-1
+    learning_rate = 1e-4
     samples_per_file = 1024
     tokens_till_latent_dies = 10_000_000
     device = 'cuda'
@@ -32,17 +32,17 @@ def main():
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client)
+    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
     # train_logger = NOOPLogger()
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
 
     with train_logger as lg:
-        lg.log({
+        lg.log_params({
             'k': k,
+            'privilege_weighting': privilege_weighting,
             'n_steps': n_steps,
-            'l1_coefficient': l1_coefficient,
             'n_feats': n_feats,
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
@@ -74,12 +74,14 @@ def main():
                     dead_latents += batch_size
                     dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
                 
-                mse = ((batch - reconstruction) ** 2).sum(0).mean()
-                mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(0).mean()
+                mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+                mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
                 scaled_mse = mse / mean_pred_mse
                 
-                loss = scaled_mse
-                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=output['latent'], dead_pct=dead_latent_pct)
+                expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
+
+                loss = scaled_mse + (expert_privilege * privilege_weighting)
+                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=output['latent'], dead_pct=dead_latent_pct, expert_privilege=expert_privilege)
 
                 if k == 0:
                     lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])

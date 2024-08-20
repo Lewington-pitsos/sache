@@ -113,7 +113,7 @@ class TrainLogger(ProcessLogger):
             }
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
@@ -121,7 +121,8 @@ class TrainLogger(ProcessLogger):
                 'dead_feature_prop': dead_pct.item(),
                 'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
-                'loss': loss.item()
+                'loss': loss.item(),
+                'expert_privilege': expert_privilege.item(),
             }
 
             if l1 is not None:
@@ -159,12 +160,8 @@ class TrainLogger(ProcessLogger):
         self.log_sae(sae, info=info)
 
 class NOOPLogger:
-    def log(self, data):
-        # This method can handle logging data, currently it does nothing.
-        pass
-
-    def __enter__(self):
         # Allows the logger to be used as a context manager.
+    def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):

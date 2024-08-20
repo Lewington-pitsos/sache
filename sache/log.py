@@ -32,6 +32,21 @@ class ProcessLogger():
     def _log_filename(self):
         return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
 
+    def _log_local(self, data):
+        if 'timestamp' not in data:
+            data['timestamp'] = time.time()
+        if 'hr_timestamp' not in data:
+            data['hr_timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(data['timestamp']))
+
+        with open(self._log_filename(), 'a') as f:
+            f.write(json.dumps(data) + '\n')
+
+    def log_params(self, params):
+        if self.log_to_wandb:
+            wandb.config.update(params)
+
+        self._log_local(params)
+
     def log(self, data):
         if self.log_to_wandb:
             wandb_message = {}
@@ -42,14 +57,7 @@ class ProcessLogger():
 
             wandb.log(wandb_message)
 
-        if 'timestamp' not in data:
-            data['timestamp'] = time.time()
-        if 'hr_timestamp' not in data:
-            data['hr_timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(data['timestamp']))
-
-        with open(self._log_filename(), 'a') as f:
-            f.write(json.dumps(data) + '\n')
-
+        self._log_local(data)
     def finalize(self):
         if self.s3_backup_bucket is not None: 
             self.s3_client.upload_file(self._log_filename(), self.s3_backup_bucket, self.s3_backup_path)

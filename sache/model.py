@@ -32,6 +32,7 @@ class SwitchSAE(torch.nn.Module):
         return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
     def forward_descriptive(self, activations): # activations: (batch_size, d_in)
+        batch_size = activations.shape[0]
         # accumulators
         _full_recons = torch.zeros_like(activations) # (batch_size, d_in)
         _full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
@@ -39,6 +40,9 @@ class SwitchSAE(torch.nn.Module):
         
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
+
+        expert_prop = torch.bincount(expert_idx, minlength=self.n_experts) / batch_size # (n_experts,)
+        expert_weighting = torch.mean(expert_probabilities, dim=0) # (n_experts,)
 
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
@@ -62,6 +66,8 @@ class SwitchSAE(torch.nn.Module):
             'latent': _full_latent, 
             'active_latents': _was_active,
             'experts_chosen': expert_idx,
+            'expert_prop': expert_prop,
+            'expert_weighting': expert_weighting,
         }
               # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
 

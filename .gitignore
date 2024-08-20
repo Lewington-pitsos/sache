@@ -17,3 +17,5 @@ pad.py
 pad.ipynb
 
 .credentials.json
+
+wandb

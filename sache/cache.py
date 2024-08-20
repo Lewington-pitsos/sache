@@ -308,7 +308,7 @@ class S3RCache():
 
     def _catch_stop(self, *args, **kwargs):
         print('cleaning up before process is killed')
-        self.stop_downloading()
+        self._stop_downloading()
         sys.exit(0)
 
     def sync(self):
@@ -375,7 +375,7 @@ class S3RCache():
             return t
         except Exception as e:
             print('exception while iterating', e)
-            self.stop_downloading()
+            self._stop_downloading()
             raise StopIteration
     
     def __next__(self):
@@ -383,10 +383,13 @@ class S3RCache():
             return self._next_tensor()
 
         if self._running_processes:
-            self.stop_downloading()
+            self._stop_downloading()
         raise StopIteration
 
-    def stop_downloading(self):
+    def finalize(self):
+        self._stop_downloading()
+
+    def _stop_downloading(self):
         print('stopping workers...')
         self._file_index.value = len(self._s3_paths)
         self._stop.value = True
@@ -406,6 +409,81 @@ class S3RCache():
 
         self._ongoing_downloads.value = 0
         self._running_processes = []
+
+class ShufflingCache():
+    def __init__(self, cache, buffer_size, d_in, batch_size, dtype):
+        assert buffer_size % batch_size == 0, f'buffer_size must be a multiple of batch_size, got buffer_size: {buffer_size}, batch_size: {batch_size}'
+
+        self.cache = cache
+        self.buffer = torch.empty((buffer_size, d_in), dtype=dtype)
+        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+        
+        self._current_idx = 0
+        self._cache_is_empty = False
+
+    def sync(self):
+        self.cache.sync()
+
+    def __iter__(self):
+        self.cache.__iter__()
+        return self
+
+    def finalize(self):
+        self.cache.finalize()
+
+    def _full(self):
+        return self._current_idx == self.buffer_size
+
+    def _add_to_buffer(self, activations):
+        flat_activations = activations.flatten(0, 1)
+
+        if self.buffer_size % flat_activations.shape[0] != 0:
+            raise ValueError(f'Buffer size {self.buffer_size} must always be divisible by flattened activations shape, but got: {flat_activations.shape}')
+
+        next_idx = self._current_idx + flat_activations.shape[0]
+        self.buffer[self._current_idx:next_idx] = flat_activations
+
+        self._current_idx = next_idx
+    
+    def _next(self):
+        if self._current_idx < self.batch_size:
+            raise StopIteration
+
+        start_idx = self._current_idx - self.batch_size
+        activations = self.buffer[start_idx:self._current_idx]
+
+        self._current_idx = start_idx
+
+        return activations
+
+    def _flag_cache_as_empty(self):
+        self._cache_is_empty = True
+
+    def _shuffle_cache(self):
+        if self._current_idx > 0:
+            self.buffer[:self._current_idx] = self.buffer[torch.randperm(self._current_idx)]
+
+    def _half_full(self):
+        return self._current_idx >= self.buffer_size // 2
+
+    def __next__(self):
+        if self._cache_is_empty:
+            return self._next()
+
+        if self._half_full():
+            return self._next()
+
+        while not self._full():
+            try:
+                self._add_to_buffer(next(self.cache))
+            except StopIteration:
+                self._flag_cache_as_empty()
+                break
+
+        self._shuffle_cache()
+
+        return self._next()
 
 class RBatchingCache():
     def __init__(self, cache, batch_size) -> None:

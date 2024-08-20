@@ -39,7 +39,7 @@ def main():
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
     print(f"Overall MB per second: {round(total_size * n / MB) / (overall_end - overall_start):.2f}")
 
-    cache.stop_downloading()
+    cache._stop_downloading()
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ def main():
     k = 32
     n_feats = 24576
     d_in = 768
-    batch_size = 8192 * 32 
+    batch_size = 8192 * 32
     n_experts = 32
     privilege_weighting = 1e-0
     learning_rate = 1e-4
@@ -32,8 +32,8 @@ def main():
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
-    # train_logger = NOOPLogger()
+    # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
+    train_logger = NOOPLogger()
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
@@ -109,7 +109,7 @@ def main():
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
     print(f"Overall MB per second: {round(total_size / MB * n_steps) / (overall_end - overall_start):.2f}")
-    cache.stop_downloading()
+    cache.finalize()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import shutil
 import os
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache, ShufflingCache
 import torch
 import boto3
 import pytest
@@ -146,10 +146,46 @@ def test_s3_read_cache(s3_client):
     assert batch.dtype == activations.dtype
     assert torch.equal(batch, activations)
     assert batch.isnan().sum().item() == 0
-    cache.stop_downloading()
+    cache._stop_downloading()
 
     for batch in cache:
         count += 1
         pass
     assert count >= 0
     assert torch.equal(activations, batch)
+
+
+def test_shuffling_read_cache():
+    torch.manual_seed(0)
+
+    batch_size = 4
+    seq_len = 8
+    d_in = 16
+    
+    class MockCache():
+        def __init__(self):
+            self.data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
+        
+        def __iter__(self):
+            self.data = iter(self.data)
+            return self
+
+        def __next__(self):
+            return next(self.data)
+
+        def finalize(self):
+            pass
+
+        def sync(self):
+            pass
+
+    mc = MockCache()
+
+    sc = ShufflingCache(mc, batch_size * seq_len * 6, d_in, batch_size * seq_len, dtype=torch.float32)
+
+    for i, batch in enumerate(sc):
+        assert batch.shape == (batch_size * seq_len, d_in)
+        assert batch.isnan().sum().item() == 0
+        print(batch.mean().item())
+
+    assert i == 14

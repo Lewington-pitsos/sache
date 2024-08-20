@@ -2,3 +2,4 @@ pytest
 aiohttp 
 datasets
 sae_lens
+wandb

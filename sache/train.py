@@ -2,14 +2,8 @@ import os
 import torch
 import numpy as np
 
-from sache.cache import RBatchingCache, RCache
 from sache.log import ProcessLogger
 from sache.model import SAE, SwitchSAE, TopKSwitchSAE
-
-def build_cache(local_cache_dir, batch_size, device):
-    inner_cache = RCache(local_cache_dir, device, buffer_size=8)
-    cache = RBatchingCache(cache=inner_cache, batch_size=batch_size)
-    return cache
 
 def get_histogram(tensor, bins=50):
     hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
@@ -160,15 +154,11 @@ class TrainLogger(ProcessLogger):
         self.log_sae(sae, info=info)
 
 class NOOPLogger:
-        # Allows the logger to be used as a context manager.
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # Handle exiting the context manager, ignoring any exceptions.
         pass
 
     def __getattr__(self, name):
-        # This will catch any undefined attribute or method calls.
-        # It returns a lambda that does nothing, making every call a no-op.
         return lambda *args, **kwargs: None

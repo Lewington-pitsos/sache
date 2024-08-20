@@ -20,7 +20,7 @@ def main():
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
-    privilege_weighting = 1e-1
+    privilege_weighting = 1e-0
     learning_rate = 1e-4
     samples_per_file = 1024
     tokens_till_latent_dies = 10_000_000

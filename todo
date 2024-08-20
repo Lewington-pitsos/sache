@@ -1,3 +1,4 @@
+- log to wandb
 - track number of dead latents
 - aux loss to make sure experts are used equally
 

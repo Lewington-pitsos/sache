@@ -3,15 +3,17 @@ import json
 import os
 from uuid import uuid4
 import boto3
+import wandb
 
 from sache.constants import BUCKET_NAME
 
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None):
+    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, log_to_wandb=False):
         self.run_name = run_name
         self.logger_id = str(uuid4())
+        self.log_to_wandb = log_to_wandb
 
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR, exist_ok=True)
@@ -23,6 +25,9 @@ class ProcessLogger():
             assert s3_client is not None, 's3_client must be provided if s3_backup_bucket is provided'
             self.s3_backup_path = os.path.join(LOG_DIR, self.run_name, self.logger_id + '.jsonl')
             self.s3_client = s3_client
+
+        if log_to_wandb:
+            wandb.init(project=run_name, name=self.logger_id)
 
     def _log_filename(self):
         return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
@@ -64,7 +69,7 @@ def download_logs(bucket_name=BUCKET_NAME, s3_folder_prefix=LOG_DIR, local_downl
     if 'Contents' in response:
         for item in response['Contents']:
             file_path = item['Key']
-            local_file_path = os.path.join(local_download_path, file_path[len(s3_folder_prefix) + 1:])
+            local_file_path = os.path.join(local_download_path, file_path[len(s3_folder_prefix) + 1:].replace('/', '_'))
             
             # Create local directory structure if it does not exist
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)

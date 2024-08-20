@@ -21,7 +21,7 @@ def main():
     d_in = 768
     batch_size = 8192 * 32 
     n_experts = 32
-    learning_rate = 1e-4
+    learning_rate = 2e-4
     samples_per_file = 1024
     tokens_till_latent_dies = 10_000_000
     device = 'cuda'
@@ -36,7 +36,7 @@ def main():
     # train_logger = NOOPLogger()
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
-    dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device)
+    dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
 
     with train_logger as lg:
         lg.log({
@@ -66,14 +66,13 @@ def main():
                 batch = t[k:k+batch_size].to(device)
                 batch = normalizer.normalize(batch)
 
-                output = sae.forward(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                output = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                 reconstruction = output['reconstruction']
 
                 with torch.no_grad():
                     dead_latents[output['active_latents']] = 0
                     dead_latents += batch_size
-
-                dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
+                    dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
                 
                 mse = ((batch - reconstruction) ** 2).sum(0).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(0).mean()

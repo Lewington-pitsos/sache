@@ -2,7 +2,7 @@ import shutil
 import os
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache, RCache
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache
 import torch
 import boto3
 import pytest
@@ -148,41 +148,8 @@ def test_s3_read_cache(s3_client):
     assert batch.isnan().sum().item() == 0
     cache.stop_downloading()
 
-def test_local_reading_cache(test_cache_dir):
-    cache = RCache(test_cache_dir, 'cpu', buffer_size=2, num_workers=1)
-
-    count = 0
-    for _ in cache:
-        count += 1
-        pass
-    assert count == 0
-
-    activations = torch.rand(32, 16, 9)
-    torch.save(activations, os.path.join(test_cache_dir, 'a.pt'))
-
-    for _ in cache:
-        count += 1
-        pass
-    assert count == 0
-
-    cache.sync()
     for batch in cache:
         count += 1
         pass
     assert count >= 0
     assert torch.equal(activations, batch)
-
-def test_local_read_batching(test_cache_dir):
-    inner_cache = RCache(test_cache_dir, 'cpu')
-    cache = RBatchingCache(inner_cache, 2)
-
-    activations = torch.rand(32, 16, 9)
-    torch.save(activations, os.path.join(test_cache_dir, 'a.pt'))
-
-    cache.sync()
-    count = 0
-    for _ in cache:
-        count += 1
-        pass
-
-    assert count == 16

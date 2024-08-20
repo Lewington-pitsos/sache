@@ -1,7 +1,13 @@
+import pytest
 import torch
 from sache.model import TopKSwitchSAE
 
 def test_eagre_and_triton_decode_get_same_results():
+    try:
+        from sache.kernel import triton_decode
+    except ImportError:
+        pytest.skip("Triton is not installed, skipping triton related test")
+
     n_experts = 4
     d_in = 32
     k = 4

@@ -37,16 +37,13 @@ class SwitchSAE(torch.nn.Module):
         _full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
         _was_active = torch.zeros(self.n_experts, self.expert_dim, device=self.device, requires_grad=False, dtype=bool) # (n_experts, expert_dim)
         
-        
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
 
-        b_activations = activations - self.pre_b
-        
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
                 expert_mask = expert_idx == expert_id # (n_to_expert,)
-                expert_input = b_activations[expert_mask] 
+                expert_input = activations[expert_mask] - self.pre_b # (n_to_expert, d_in)
 
                 routed_enc = self.enc[expert_id] # (d_in, expert_dim)
                 routed_dec = self.dec[expert_id] # (expert_dim, d_in)

@@ -156,7 +156,7 @@ def test_s3_read_cache(s3_client):
 
 
 def test_shuffling_read_cache():
-    torch.manual_seed(0)
+    torch.manual_seed(42)
 
     batch_size = 4
     seq_len = 8
@@ -186,6 +186,6 @@ def test_shuffling_read_cache():
     for i, batch in enumerate(sc):
         assert batch.shape == (batch_size * seq_len, d_in)
         assert batch.isnan().sum().item() == 0
-        print(batch.mean().item())
+        assert batch.std().item() > 1.0
 
     assert i == 14

@@ -465,7 +465,7 @@ class ShufflingCache():
             self.buffer[:self._current_idx] = self.buffer[torch.randperm(self._current_idx)]
 
     def _half_full(self):
-        return self._current_idx >= self.buffer_size // 2
+        return self._current_idx > self.buffer_size // 2
 
     def __next__(self):
         if self._cache_is_empty:

@@ -33,6 +33,15 @@ class ProcessLogger():
         return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
 
     def log(self, data):
+        if self.log_to_wandb:
+            wandb_message = {}
+
+            for k, v in data.items():
+                if isinstance(v, (int, float)):
+                    wandb_message[k] = v
+
+            wandb.log(wandb_message)
+
         if 'timestamp' not in data:
             data['timestamp'] = time.time()
         if 'hr_timestamp' not in data:
@@ -45,6 +54,9 @@ class ProcessLogger():
         if self.s3_backup_bucket is not None: 
             self.s3_client.upload_file(self._log_filename(), self.s3_backup_bucket, self.s3_backup_path)
             print(f"Uploaded log file to {self.s3_backup_path}")
+
+        if self.log_to_wandb:
+            wandb.finish()
 
     def __enter__(self):
         return self

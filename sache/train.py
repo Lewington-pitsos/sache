@@ -118,7 +118,7 @@ class TrainLogger(ProcessLogger):
             message = {
                 'event': 'training_batch', 
                 'mse': mse.item(),
-                'dead_latent_pct': dead_pct.item(),
+                'dead_feature_prop': dead_pct.item(),
                 'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
                 'loss': loss.item()

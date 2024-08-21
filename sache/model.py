@@ -84,13 +84,12 @@ class TopKSwitchSAE(SwitchSAE):
         if self.efficient:
             from sache.kernel import triton_decode
             self._decode = triton_decode
-            self.dec = torch.nn.Parameter(self.dec.contiguous().mT) # requried for triton kernels
+            self.dec = torch.nn.Parameter(self.dec.mT) # requried for triton kernels
         else:
             self._decode = self._eagre_decode
 
     def _encode(self, pre_activation):
         return (torch.topk(pre_activation, k=self.k, dim=-1), pre_activation)
-
 
     def _eagre_decode(self, latent_info, dec):
         topk, pre_activation = latent_info

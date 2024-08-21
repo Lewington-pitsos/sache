@@ -1,6 +1,7 @@
 import pytest
 import torch
 from sache.model import TopKSwitchSAE
+from sache.kernel import triton_decode
 
 def test_eagre_and_triton_decode_get_same_results():
     try:
@@ -25,6 +26,6 @@ def test_eagre_and_triton_decode_get_same_results():
 
         dec = triton_sae.dec[2]
         eagre_latent, eagre_reconstruction = triton_sae._eagre_decode(input, dec)
-        triton_latent, triton_reconstruction = triton_sae._triton_decode(input, dec.T)
+        triton_latent, triton_reconstruction = triton_decode(input, dec)
 
     assert torch.allclose(eagre_reconstruction, triton_reconstruction)

@@ -420,6 +420,6 @@ class TritonDecoderAutograd(torch.autograd.Function):
 def triton_decode(latent_info, dec):
     topk, pre_activation = latent_info
     
-    recons = TritonDecoderAutograd.apply(topk.indices, topk.values, dec)
+    recons = TritonDecoderAutograd.apply(topk.indices, topk.values, dec.T)
 
     return pre_activation, recons

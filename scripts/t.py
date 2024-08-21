@@ -14,11 +14,11 @@ from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchS
 from sache.constants import MB, BUCKET_NAME
 
 def main():
-    n_steps = 700 # 647 is the total
+    n_steps = 289 # 647 is the total 288 means 300,000,000 tokens
     k = 32
     n_feats = 24576
     d_in = 768
-    batch_size = 8192 * 64
+    batch_size = 8192 * 32
     n_experts = 32
     l1_coefficient = 2e-3
     privilege_weighting = 2e-1
@@ -56,72 +56,72 @@ def main():
         optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
-        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=4)
+        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
         total_size = cache.metadata['bytes_per_file']
-        cache = ShufflingCache(cache, batch_size=samples_per_file * 1024, buffer_size=samples_per_file * 1024 * 4, d_in=d_in,  dtype=torch.float32)
+        tokens_per_file = samples_per_file * 1024
+        cache = ShufflingCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
 
         overall_start = time.time()
         start = time.time()
         
+        token_count = 0
         for j, t in enumerate(cache):
-            if len(t.shape) == 3:
-                t = t.flatten(0, 1) # (n_samples, d_in)
-            for k in range(0, t.shape[0], batch_size):
-                optimizer.zero_grad()
-                batch = t[k:k+batch_size].to(device)
-                batch = normalizer.normalize(batch)
+            token_count += batch_size
 
-                output = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
-                reconstruction = output['reconstruction']
+            optimizer.zero_grad()
+            batch = t.to(device)
+            batch = normalizer.normalize(batch)
 
-                with torch.no_grad():
-                    dead_latents[output['active_latents']] = 0
-                    dead_latents += batch_size
-                    dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
-                
-                mse = ((batch - reconstruction) ** 2).sum(-1).mean()
-                mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
-                scaled_mse = mse / mean_pred_mse
+            output = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+            reconstruction = output['reconstruction']
 
-                l1 = output['latent'].norm(1.0, dim=-1).mean()
-                
-                expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
+            with torch.no_grad():
+                dead_latents[output['active_latents']] = 0
+                dead_latents += batch_size
+                dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
+            
+            mse = ((batch - reconstruction) ** 2).sum(-1).mean()
+            mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
+            scaled_mse = mse / mean_pred_mse
 
-                loss = scaled_mse + (expert_privilege * privilege_weighting) + l1 * l1_coefficient
-                lg.log_loss(
-                    mse=mse, 
-                    scaled_mse=scaled_mse, 
-                    l1=l1, 
-                    loss=loss, 
-                    batch=batch, 
-                    latent=output['latent'], 
-                    dead_pct=dead_latent_pct, 
-                    expert_privilege=expert_privilege,
-                    lr=optimizer.param_groups[-1]['lr'],
-                )
+            l1 = output['latent'].norm(1.0, dim=-1).mean()
+            
+            expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
 
-                if k == 0:
-                    lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])
+            loss = scaled_mse + (expert_privilege * privilege_weighting) + l1 * l1_coefficient
+            lg.log_loss(
+                mse=mse, 
+                scaled_mse=scaled_mse, 
+                l1=l1, 
+                loss=loss, 
+                batch=batch, 
+                latent=output['latent'], 
+                dead_pct=dead_latent_pct, 
+                expert_privilege=expert_privilege,
+                lr=optimizer.param_groups[-1]['lr'],
+            )
 
-                loss.backward()
-                optimizer.step()
+            if k == 0:
+                lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])
 
+            loss.backward()
+            optimizer.step()
 
-            end = time.time()
-            elapsed = end - start
-            print(f"Time taken for batch {j}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
-            lg.log({
-                'event': 'file_processed',
-                'elapsed': elapsed, 
-                'mb_downloaded': total_size / MB, 
-                'mbps': total_size / MB / elapsed,
-            })
+            if token_count % tokens_per_file == 0:
+                end = time.time()
+                elapsed = end - start
+                print(f"Time taken for file {j}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
+                lg.log({
+                    'event': 'file_processed',
+                    'elapsed': elapsed, 
+                    'mb_downloaded': total_size / MB, 
+                    'mbps': total_size / MB / elapsed,
+                })
 
-            if j == n_steps - 1:
-                break
+                if token_count // tokens_per_file == n_steps - 1:
+                    break
 
-            start = time.time()
-
+                start = time.time()
 
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")

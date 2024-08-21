@@ -442,15 +442,17 @@ class ShufflingCache():
             raise ValueError(f'Buffer size {self.buffer_size} must always be divisible by flattened activations shape, but got: {flat_activations.shape}')
 
         next_idx = self._current_idx + flat_activations.shape[0]
+        if next_idx > self.buffer_size:
+            raise ValueError(f'Cannot add {flat_activations.shape[0]} activations to buffer of size {self.buffer_size}, current index is {self._current_idx}')
+
         self.buffer[self._current_idx:next_idx] = flat_activations
 
         self._current_idx = next_idx
     
     def _next(self):
-        if self._current_idx < self.batch_size:
-            raise StopIteration
-
         start_idx = self._current_idx - self.batch_size
+        if start_idx < 0:
+            raise StopIteration
         activations = self.buffer[start_idx:self._current_idx]
 
         self._current_idx = start_idx

@@ -155,6 +155,24 @@ def test_s3_read_cache(s3_client):
     assert torch.equal(activations, batch)
 
 
+class MockCache():
+    def __init__(self, data):
+        self.data = data
+    
+    def __iter__(self):
+        self.data = iter(self.data)
+        return self
+
+    def __next__(self):
+        return next(self.data)
+
+    def finalize(self):
+        pass
+
+    def sync(self):
+        pass
+
+
 def test_shuffling_read_cache():
     torch.manual_seed(42)
 
@@ -162,29 +180,53 @@ def test_shuffling_read_cache():
     seq_len = 8
     d_in = 16
     
-    class MockCache():
-        def __init__(self):
-            self.data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
-        
-        def __iter__(self):
-            self.data = iter(self.data)
-            return self
-
-        def __next__(self):
-            return next(self.data)
-
-        def finalize(self):
-            pass
-
-        def sync(self):
-            pass
-
-    mc = MockCache()
+    data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
+    mc = MockCache(data)
 
     sc = ShufflingCache(mc, batch_size * seq_len * 6, batch_size * seq_len, d_in, dtype=torch.float32)
 
     for i, batch in enumerate(sc):
         assert batch.shape == (batch_size * seq_len, d_in)
+        assert batch.isnan().sum().item() == 0
+        assert batch.std().item() > 1.0
+
+    assert i == 14
+
+def test_small_bs_shuffling_read_cache():
+    torch.manual_seed(42)
+
+    batch_size = 4
+    seq_len = 8
+    d_in = 16
+    out_bs = 2
+    
+    data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
+    mc = MockCache(data)
+
+    sc = ShufflingCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
+
+    for i, batch in enumerate(sc):
+        assert batch.shape == (out_bs * seq_len, d_in)
+        assert batch.isnan().sum().item() == 0
+        assert batch.std().item() > 1.0
+
+    assert i == 29
+
+def test_big_cache_bs_shuffling_read_cache():
+    torch.manual_seed(42)
+
+    batch_size = 6
+    seq_len = 8
+    d_in = 16
+    out_bs = 2
+    
+    data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(5)]
+    mc = MockCache(data)
+
+    sc = ShufflingCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
+
+    for i, batch in enumerate(sc):
+        assert batch.shape == (out_bs * seq_len, d_in)
         assert batch.isnan().sum().item() == 0
         assert batch.std().item() > 1.0
 

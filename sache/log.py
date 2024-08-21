@@ -10,10 +10,10 @@ from sache.constants import BUCKET_NAME
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, log_to_wandb=False):
+    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False):
         self.run_name = run_name
         self.logger_id = str(uuid4())
-        self.log_to_wandb = log_to_wandb
+        self.log_to_wandb = use_wandb
 
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR, exist_ok=True)
@@ -26,7 +26,7 @@ class ProcessLogger():
             self.s3_backup_path = os.path.join(LOG_DIR, self.run_name, self.logger_id + '.jsonl')
             self.s3_client = s3_client
 
-        if log_to_wandb:
+        if use_wandb:
             wandb.init(project=run_name, name=self.logger_id)
 
     def _log_filename(self):

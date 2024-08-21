@@ -1,11 +1,10 @@
-# TODO: Implement shuffling
-
 import boto3
 import torch
 import json
 import time
 import sys 
 import os
+import fire
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -13,29 +12,31 @@ from sache.cache import S3RCache, ShufflingCache
 from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
-def main():
-    n_steps = 289 # 647 is the total 288 means 300,000,000 tokens
-    k = 32
-    n_feats = 24576
-    d_in = 768
-    batch_size = 8192 * 32
-    n_experts = 32
-    l1_coefficient = 2e-3
-    privilege_weighting = 2e-1
-    learning_rate = 1e-3
-    samples_per_file = 1024
-    tokens_till_latent_dies = 10_000_000
-    device = 'cuda'
+def main(
+        run_name = 'merciless-citadel',
+        n_steps = 289, # 647 is the total 288 means 300,000,000 tokens
+        k = 32,
+        n_feats = 24576,
+        d_in = 768,
+        batch_size = 8192 * 32,
+        n_experts = 32,
+        l1_coefficient = 2e-3,
+        privilege_weighting = 2e-1,
+        learning_rate = 1e-3,
+        samples_per_file = 1024,
+        tokens_till_latent_dies = 10_000_000,
+        device = 'cuda',
+        use_wandb=False,
+        log_bucket=BUCKET_NAME,
+        data_bucket=BUCKET_NAME
+    ):
 
-    run_name = 'merciless-citadel'
 
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
-    # train_logger = NOOPLogger()
-    # sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
+    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb)
     sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
@@ -56,7 +57,7 @@ def main():
         optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
-        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
+        cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * 1024
         cache = ShufflingCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
@@ -130,4 +131,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

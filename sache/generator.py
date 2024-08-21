@@ -12,6 +12,7 @@ from sache.cache import S3WCache, WCache, NoopCache, ThreadedReadCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
 from sache.shuffler import ShufflingCache
+from sache.constants import BUCKET_NAME
 
 class GenerationLogger(ProcessLogger):
     def __init__(self, run_name, tokenizer, log_every=100):
@@ -78,9 +79,9 @@ class GenerationLogger(ProcessLogger):
         self._keep_running = False
         self.worker_thread.join()
 
-def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=16):
+def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME, shuffling_buffer_size=16):
     with open('.credentials.json') as f:
-        credentials = json.load(f)
+        cred = json.load(f)
     
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
@@ -88,15 +89,14 @@ def build_cache(cache_type, batches_per_cache, run_name, shuffling_buffer_size=1
     elif cache_type == 'local_threaded':
         cache = WCache(run_name, save_every=batches_per_cache)
         outer_cache = ThreadedReadCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
-    elif cache_type == 's3':
-        cache = S3WCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
-        outer_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
-    elif cache_type == 's3_threaded':
-        cache = S3WCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
-        outer_cache = ThreadedReadCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
-    elif cache_type == 's3_threaded_nonshuffling':
-        cache = S3WCache.from_credentials(access_key_id=credentials['AWS_ACCESS_KEY_ID'], secret=credentials['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache)
-        outer_cache = ThreadedReadCache(cache)
+    elif cache_type in ['s3r', 's3r_threaded', 's3r_threaded_nonshuffling']:
+        cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
+        if cache_type == 's3':
+            outer_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
+        elif cache_type == 's3_threaded':
+            outer_cache = ThreadedReadCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
+        elif cache_type == 's3_threaded_nonshuffling':
+            outer_cache = ThreadedReadCache(cache)
     elif cache_type == 'noop':
         outer_cache = NoopCache()
     else:
@@ -120,6 +120,7 @@ def generate(
         seed=42,
         log_every=100,
         num_proc=cpu_count() // 2,
+        bucket_name=BUCKET_NAME,
     ):
 
     torch.manual_seed(seed)
@@ -140,7 +141,7 @@ def generate(
         'seed': seed,
     })
 
-    cache = build_cache(cache_type, batches_per_cache, run_name)
+    cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
 
     dataset = chunk_and_tokenize(
         dataset, 

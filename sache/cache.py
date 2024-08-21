@@ -9,15 +9,12 @@ from uuid import uuid4
 import boto3
 from io import BytesIO
 import time
-from threading import Thread
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
 import asyncio
 import aiohttp
 import signal
 from multiprocessing import Value, Process, Queue
 import multiprocessing as mp
-from sache.constants import *
+from sache.constants import BUCKET_NAME, MB, OUTER_CACHE_DIR, INNER_CACHE_DIR
 
 STAGES = ['saved', 'shuffled']
 
@@ -80,12 +77,13 @@ class S3WCache():
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
         return S3WCache(s3_client, *args, **kwargs)
 
-    def __init__(self, s3_client, run_name, save_every=1):
+    def __init__(self, s3_client, run_name, save_every=1, bucket_name=BUCKET_NAME):
         self.save_every = save_every
         self.run_name = run_name
         self._in_mem = []
         self.s3_client = s3_client
         self.metadata = None
+        self.bucket_name = bucket_name
 
     def append(self, activations):
         if self.metadata is None:
@@ -99,7 +97,7 @@ class S3WCache():
                 'shape': (activations.shape[0] * self.save_every, *activations.shape[1:])
             }
 
-            self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=BUCKET_NAME, Key=_metadata_path(self.run_name))
+            self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=self.bucket_name, Key=_metadata_path(self.run_name))
         else:
             if activations.shape[0] != self.metadata['batch_size']:
                 print(f'Warning: batch size mismatch. Expected {self.metadata["batch_size"]}, got {activations.shape}')
@@ -138,7 +136,7 @@ class S3WCache():
         tensor_bytes = activations.numpy().tobytes()
     
         self.s3_client.put_object(
-            Bucket=BUCKET_NAME, 
+            Bucket=self.bucket_name, 
             Key=filename, 
             Body=tensor_bytes, 
             ContentLength=len(tensor_bytes),
@@ -150,7 +148,7 @@ class S3WCache():
     def load(self, id):
         filename = self._filename(id)
         buffer = BytesIO()
-        self.s3_client.download_fileobj(BUCKET_NAME, filename, buffer)
+        self.s3_client.download_fileobj(self.bucket_name, filename, buffer)
         buffer.seek(0)
 
         with warnings.catch_warnings():

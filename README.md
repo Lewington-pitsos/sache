@@ -12,6 +12,10 @@ This codebase is used to:
     3. Train a sparse autoencoder on those activations
 
 
+<<<<<<<<<<<<<<<<<< ADD DIAGRAM >>>>>>>>>>>>>>>>>>
+
+The way this codebase should *probably* be used is as a parts shop which can be cannibalized for the user's own unholy purposes. In particular it can be used as a guide for setting up high throughput s3 tensor reading and writing (see `sache/cache.py`). Installation instructions, tests and usage instructions are included below so users can achieve confidence that the code actually works.
+
 ## Installation
 
 Install requirements
@@ -23,7 +27,7 @@ Add aws credentials to a new file called `.credentials.json` which copies the fo
 
 ## Testing
 
-Note: many tests will fail unless you have an internet connection so make sure you're juiced up.
+Note: many tests will fail unless the server they run on has an internet connection so make sure you're juiced up.
 
 ```bash
 python -m pytest
@@ -35,28 +39,29 @@ python -m pytest
 python scripts/generate.py --bucket_name my_epic_bucket
 ```
 
-Will start the generation process, keep track of the "run name" as this is the prefix under which the activations will be saved in s3. Note that they are saved in a janky format (raw bytes) to make them quicker to load on the other end. Once you save them you can't simply load them using `torch.load`, you need to use `torch.frombuffer` (see `sache/cache.py`). The activations are stored in ~3GB files consisting of (batch_size, sequence_length, hidden_dim) = (1024, 1024, 768) tensors.
-
+Will start the generation process. The "run name" is the prefix under which the activations will be saved in s3. Note that they are saved in a janky format (raw bytes) to make them quicker to load on the other end. Once saved they must be loaded via `torch.frombuffer` (see `sache/cache.py`). The activations are stored in ~3GB files consisting of (batch_size, sequence_length, hidden_dim) = (1024, 1024, 768) tensors.
 
 Example activations for `gpt2-small` on 678,428,672 tokens are available [here](). <<<<<<<<<<<<<<>>>>>>>>>>>>>>
 
 ## Deploying a server to AWS
 
-Make sure you have terraform installed and then edit `server.tf` so that the `aws_key_pair.public_key` points to a local public key (which will allow you to access the server via SSH.)
+Install terraform, then edit `server.tf` so that the `aws_key_pair.public_key` points to a local public key (which will allow SSH access to the spun-up server.)
 
-Then from the root of this project
+Then from the root of this project run
 
 ```bash
 terraform -chdir=./terraform/environments/production apply
 ```
 
-This is important since loading activations from s3 will be super slow unless your sever is deployed inside the same region as your s3 bucket king. Other instance types will mostly also be incredibly slow, see ec2 instance [throughput limits]() <<<<<<<<<<<<>>>>>>>>>>>>. Once the instance is deployed you can SSH into it and start training the SAE.
+This setup is important since loading activations from s3 will be super slow unless the loading sever is deployed inside the same region as the s3 bucket king. Other instance types will mostly also be incredibly slow, see ec2 instance [throughput limits]() <<<<<<<<<<<<>>>>>>>>>>>>. Once deployed the instance can be SSH'd into and training can commence.
 
-Note: the `aws_instance.ami` has been carefully chosen to make nvidia actually work, but it will only work inside `us-east-1`. If you want to deploy elsewhere you will need to find the equivalent ami for that region.
+Note: the `aws_instance.ami` has been carefully chosen to make the surprisingly finnicky nvidia actually work, but it will only work inside `us-east-1`. Deployments to other regions will require the equivalent ami for that region.
+
+Unfortunately by default a new AWS account will have a quota of 0 "Running G and VT Instance" CPUs to run the required `g4dn.8xlarge` instance and a quota increase will need to be requested. AWS can be somewhat guarded with their GPU instance quotas, so that may end up being a bit of a hurdle :(
 
 ## Training a SAE
 
-You should only do this inside AWS in the same region as your bucket or else it will be horrifically slow. 
+This will be horrifically slow unless the training server is inside AWS in the same region as the activations bucket. 
 
 ```bash
 python scripts/train_sae.py --run_name merciless_citadel --use_wandb --log_bucket bucket_full_of_karpathy_fanart

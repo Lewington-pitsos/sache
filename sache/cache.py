@@ -411,7 +411,7 @@ class S3RCache():
         self._running_processes = []
 
 class ShufflingCache():
-    def __init__(self, cache, buffer_size, d_in, batch_size, dtype):
+    def __init__(self, cache, buffer_size, batch_size, d_in, dtype):
         assert buffer_size % batch_size == 0, f'buffer_size must be a multiple of batch_size, got buffer_size: {buffer_size}, batch_size: {batch_size}'
 
         self.cache = cache

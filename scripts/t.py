@@ -9,7 +9,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sache.cache import S3RCache
+from sache.cache import S3RCache, ShufflingCache
 from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
@@ -21,7 +21,7 @@ def main():
     batch_size = 8192 * 32
     n_experts = 32
     privilege_weighting = 1e-0
-    learning_rate = 1e-4
+    learning_rate = 2e-4
     samples_per_file = 1024
     tokens_till_latent_dies = 10_000_000
     device = 'cuda'
@@ -32,8 +32,8 @@ def main():
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    # train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
-    train_logger = NOOPLogger()
+    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
+    # train_logger = NOOPLogger()
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
@@ -53,14 +53,14 @@ def main():
         optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
-        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=2)
-        
-        total_size = cache.metadata['bytes_per_file']
+        inner_cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=4)
+        total_size = inner_cache.metadata['bytes_per_file']
+        cache = ShufflingCache(inner_cache, batch_size=samples_per_file * 1024, buffer_size=samples_per_file * 1024 * 2, d_in=d_in,  dtype=torch.float32)
+
         overall_start = time.time()
         start = time.time()
         
         for j, t in enumerate(cache):
-            t = t.flatten(0, 1) # t comes out as (batch_size, sequence_length, d_in), we want to pretend there is no sequence, each sample is a token now.
             for k in range(0, t.shape[0], batch_size):
                 optimizer.zero_grad()
                 batch = t[k:k+batch_size].to(device)

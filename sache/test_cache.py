@@ -181,7 +181,7 @@ def test_shuffling_read_cache():
 
     mc = MockCache()
 
-    sc = ShufflingCache(mc, batch_size * seq_len * 6, d_in, batch_size * seq_len, dtype=torch.float32)
+    sc = ShufflingCache(mc, batch_size * seq_len * 6, batch_size * seq_len, d_in, dtype=torch.float32)
 
     for i, batch in enumerate(sc):
         assert batch.shape == (batch_size * seq_len, d_in)

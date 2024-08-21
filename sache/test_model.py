@@ -1,7 +1,6 @@
 import pytest
 import torch
 from sache.model import TopKSwitchSAE
-from sache.kernel import triton_decode
 
 def test_eagre_and_triton_decode_get_same_results():
     try:

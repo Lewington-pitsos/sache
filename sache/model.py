@@ -38,10 +38,10 @@ class SwitchSAE(torch.nn.Module):
         
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
-
+        
         expert_prop = torch.bincount(expert_idx, minlength=self.n_experts) / batch_size # (n_experts,)
         expert_weighting = torch.mean(expert_probabilities, dim=0) # (n_experts,)
-
+        
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
                 expert_mask = expert_idx == expert_id # (n_to_expert,)

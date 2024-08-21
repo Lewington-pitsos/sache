@@ -1,3 +1,5 @@
+- same lr no shuffle
+- relu switch SAE
 
 # Anthropic June Update
 - TopK (and gated) SAE's do indeed seem to be a pareto improvement over L1 saes

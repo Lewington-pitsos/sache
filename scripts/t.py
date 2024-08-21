@@ -18,10 +18,11 @@ def main():
     k = 32
     n_feats = 24576
     d_in = 768
-    batch_size = 8192 * 32
+    batch_size = 8192 * 64
     n_experts = 32
-    privilege_weighting = 1e-0
-    learning_rate = 2e-4
+    l1_coefficient = 2e-3
+    privilege_weighting = 2e-1
+    learning_rate = 1e-3
     samples_per_file = 1024
     tokens_till_latent_dies = 10_000_000
     device = 'cuda'
@@ -34,7 +35,8 @@ def main():
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=BUCKET_NAME, s3_client=s3_client, log_to_wandb=True)
     # train_logger = NOOPLogger()
-    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
+    # sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
+    sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
 
@@ -48,19 +50,22 @@ def main():
             'samples_per_file': samples_per_file,
             'inner_bs': batch_size,
             'learning_rate': learning_rate,
+            'l1_coefficient': l1_coefficient,
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
         normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
-        inner_cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=4)
-        total_size = inner_cache.metadata['bytes_per_file']
-        cache = ShufflingCache(inner_cache, batch_size=samples_per_file * 1024, buffer_size=samples_per_file * 1024 * 2, d_in=d_in,  dtype=torch.float32)
+        cache = S3RCache(s3_client, run_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=4)
+        total_size = cache.metadata['bytes_per_file']
+        cache = ShufflingCache(cache, batch_size=samples_per_file * 1024, buffer_size=samples_per_file * 1024 * 4, d_in=d_in,  dtype=torch.float32)
 
         overall_start = time.time()
         start = time.time()
         
         for j, t in enumerate(cache):
+            if len(t.shape) == 3:
+                t = t.flatten(0, 1) # (n_samples, d_in)
             for k in range(0, t.shape[0], batch_size):
                 optimizer.zero_grad()
                 batch = t[k:k+batch_size].to(device)
@@ -72,16 +77,28 @@ def main():
                 with torch.no_grad():
                     dead_latents[output['active_latents']] = 0
                     dead_latents += batch_size
-                    dead_latent_pct = (dead_latents >= tokens_till_latent_dies).sum() / dead_latents.numel()
+                    dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
                 
                 mse = ((batch - reconstruction) ** 2).sum(-1).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
                 scaled_mse = mse / mean_pred_mse
+
+                l1 = output['latent'].norm(1.0, dim=-1).mean()
                 
                 expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
 
-                loss = scaled_mse + (expert_privilege * privilege_weighting)
-                lg.log_loss(mse=mse, scaled_mse=scaled_mse, l1=None, loss=loss, batch=batch, latent=output['latent'], dead_pct=dead_latent_pct, expert_privilege=expert_privilege)
+                loss = scaled_mse + (expert_privilege * privilege_weighting) + l1 * l1_coefficient
+                lg.log_loss(
+                    mse=mse, 
+                    scaled_mse=scaled_mse, 
+                    l1=l1, 
+                    loss=loss, 
+                    batch=batch, 
+                    latent=output['latent'], 
+                    dead_pct=dead_latent_pct, 
+                    expert_privilege=expert_privilege,
+                    lr=optimizer.param_groups[-1]['lr'],
+                )
 
                 if k == 0:
                     lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])

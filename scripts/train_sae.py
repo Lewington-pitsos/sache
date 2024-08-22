@@ -9,7 +9,7 @@ import fire
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache
-from sache.train import SAE, TrainLogger, NOOPLogger, SwitchSAE, TopKSwitchSAE
+from sache.train import TrainLogger, SwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
 def main(

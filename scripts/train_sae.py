@@ -9,12 +9,12 @@ import fire
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache
-from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE, TopKSwitchSAE
+from sache.train import SAE, TrainLogger, NOOPLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
 def main(
         run_name = 'merciless-citadel',
-        n_steps = 289, # 647 is the total 288 means 300,000,000 tokens
+        n_steps = 289, # 647 is the total 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
@@ -58,9 +58,8 @@ def main(
 
         cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
 
-        mean = torch.tensor(cache.metadata['mean'], device=device)
-        std = torch.tensor(cache.metadata['std'], device=device)
-        normalizer = MeanStdNormalizer(mean, std)
+        dataset_mean = torch.tensor(cache.metadata['mean'], device=device, requires_grad=False)
+        dataset_std = torch.tensor(cache.metadata['std'], device=device, requires_grad=False)
 
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * 1024
@@ -75,7 +74,8 @@ def main(
 
             optimizer.zero_grad()
             batch = t.to(device)
-            batch = normalizer.normalize(batch)
+            with torch.no_grad():
+                batch = (batch - dataset_mean) / dataset_std
 
             output = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
             reconstruction = output['reconstruction']

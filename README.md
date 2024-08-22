@@ -1,4 +1,4 @@
-# Training a Sparse Autoencoder on GPT2 in < 40 minutes
+# Training a Sparse Autoencoder on GPT2 in < 35 minutes
 
 This codebase is used to:
 1. Save LLM activations to S3, i.e.

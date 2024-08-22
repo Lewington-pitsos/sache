@@ -9,7 +9,7 @@ import fire
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache
-from sache.train import TrainLogger, SwitchSAE
+from sache.train import TrainLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
 def main(
@@ -37,7 +37,7 @@ def main(
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb)
-    sae = SwitchSAE(n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device)
+    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
 
@@ -89,15 +89,13 @@ def main(
             mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
             scaled_mse = mse / mean_pred_mse
 
-            l1 = output['latent'].norm(1.0, dim=-1).mean()
-            
             expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
 
-            loss = scaled_mse + (expert_privilege * privilege_weighting) + l1 * l1_coefficient
+            loss = scaled_mse + (expert_privilege * privilege_weighting)
             lg.log_loss(
                 mse=mse, 
                 scaled_mse=scaled_mse, 
-                l1=l1, 
+                l1=None, 
                 loss=loss, 
                 batch=batch, 
                 latent=output['latent'], 

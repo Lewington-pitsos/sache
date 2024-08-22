@@ -337,7 +337,7 @@ class S3RCache():
 
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
         _metadata = _metadata_path(self.s3_prefix)
-        paths = [f"http://{BUCKET_NAME}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
+        paths = [f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
 
         return sorted(paths)
 
@@ -475,7 +475,11 @@ class ShufflingRCache():
 
     def __next__(self):
         if self._cache_is_empty:
-            return self._next()
+            try:
+                return self._next()
+            except StopIteration:
+                self.cache.finalize()
+                raise StopIteration
 
         if self._half_full():
             return self._next()
@@ -499,6 +503,9 @@ class RBatchingCache():
 
         self._finished = False
 
+    def finalize(self):
+        self.cache.finalize()
+
     def sync(self):
         self.cache.sync()
 
@@ -509,14 +516,15 @@ class RBatchingCache():
 
     def __next__(self):
         if self._finished:
+            self.cache.finalize()
             raise StopIteration
 
         if self.activations is None:
-            self.activations = next(self.cache)
+            self.activations = next(self.cache).flatten(0, 1)
 
         while self.activations.shape[0] < self.batch_size:
             try:
-                self.activations = torch.cat([self.activations, next(self.cache)], dim=0)
+                self.activations = torch.cat([self.activations, next(self.cache).flatten(0, 1)], dim=0)
             except StopIteration:
                 self._finished = True
                 if self.activations.shape[0] == 0:

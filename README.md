@@ -64,7 +64,7 @@ Unfortunately by default a new AWS account will have a quota of 0 "Running G and
 This will be horrifically slow unless the training server is inside AWS in the same region as the activations bucket. 
 
 ```bash
-python scripts/train_sae.py --run_name merciless_citadel --use_wandb --log_bucket bucket_full_of_karpathy_fanart
+python scripts/train_sae.py --use_wandb --log_bucket bucket_full_of_karpathy_fanart
 ```
 
 Using the settings specified in the terraform and loading the `merciless_citadel` activations you will achieve something like 420 mbps throughput, which equates to 300,000,000 tokens in ~35 minutes.

@@ -8,7 +8,7 @@ import fire
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sache.cache import S3RCache, ShufflingRCache
+from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
@@ -26,12 +26,11 @@ def main(
         samples_per_file = 1024,
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
-        use_wandb=False,
+        use_wandb=True,
         log_bucket=BUCKET_NAME,
-        data_bucket=BUCKET_NAME
+        data_bucket=BUCKET_NAME,
+        shuffle=True,
     ):
-
-
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
@@ -63,7 +62,11 @@ def main(
 
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * 1024
-        cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
+
+        if shuffle:
+            cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
+        else:
+            cache = RBatchingCache(cache, batch_size=batch_size)
 
         overall_start = time.time()
         start = time.time()
@@ -129,7 +132,6 @@ def main(
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
     print(f"Overall MB per second: {round(total_size / MB * n_steps) / (overall_end - overall_start):.2f}")
-    cache.finalize()
 
 if __name__ == "__main__":
     fire.Fire(main)

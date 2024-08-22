@@ -16,9 +16,16 @@ def get_histogram(tensor, bins=50):
     return hist_list, bin_edges_list
 
 class MeanStdNormalizer():
-    def __init__(self, parent_dir, device):
-        self.mean = torch.load(os.path.join(parent_dir, 'mean.pt'), map_location=device, weights_only=True)
-        self.std = torch.load(os.path.join(parent_dir, 'std.pt'), map_location=device, weights_only=True)
+    @classmethod
+    def from_disk(cls, parent_dir, device):
+        mean = torch.load(os.path.join(parent_dir, 'mean.pt'), map_location=device, weights_only=True)
+        std = torch.load(os.path.join(parent_dir, 'std.pt'), map_location=device, weights_only=True)
+
+        return MeanStdNormalizer(mean, std)
+
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
 
     def normalize(self, x):
         with torch.no_grad():

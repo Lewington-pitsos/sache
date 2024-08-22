@@ -8,10 +8,10 @@ from torch.utils.data import DataLoader
 from multiprocessing import cpu_count
 
 
-from sache.cache import S3WCache, WCache, NoopCache, ThreadedReadCache
+from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger
-from sache.shuffler import ShufflingCache
+from sache.shuffler import ShufflingWCache
 from sache.constants import BUCKET_NAME
 
 class GenerationLogger(ProcessLogger):
@@ -85,18 +85,18 @@ def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME
     
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
-        outer_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
+        outer_cache = ShufflingWCache(cache, buffer_size=shuffling_buffer_size)
     elif cache_type == 'local_threaded':
         cache = WCache(run_name, save_every=batches_per_cache)
-        outer_cache = ThreadedReadCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
+        outer_cache = ThreadedWCache(ShufflingWCache(cache, buffer_size=shuffling_buffer_size))
     elif cache_type in ['s3r', 's3r_threaded', 's3r_threaded_nonshuffling']:
         cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
         if cache_type == 's3':
-            outer_cache = ShufflingCache(cache, buffer_size=shuffling_buffer_size)
+            outer_cache = ShufflingWCache(cache, buffer_size=shuffling_buffer_size)
         elif cache_type == 's3_threaded':
-            outer_cache = ThreadedReadCache(ShufflingCache(cache, buffer_size=shuffling_buffer_size))
+            outer_cache = ThreadedWCache(ShufflingWCache(cache, buffer_size=shuffling_buffer_size))
         elif cache_type == 's3_threaded_nonshuffling':
-            outer_cache = ThreadedReadCache(cache)
+            outer_cache = ThreadedWCache(cache)
     elif cache_type == 'noop':
         outer_cache = NoopCache()
     else:
@@ -154,8 +154,10 @@ def generate(
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
     transformer.eval()
+    means = torch.tensor(XXX, device='cpu', requires_grad=False)
+    stds = torch.tensor(XXX, device='cpu', requires_grad=False)
     with torch.no_grad():
-        for batch in dataloader:
+        for i, batch in enumerate(dataloader):
             input_ids = batch['input_ids'].to(device)
 
             _, activations = transformer.run_with_cache(
@@ -165,10 +167,16 @@ def generate(
             )
             activations = activations[hook_name]
 
+            with torch.no_grad():
+                means += activations.mean(dim=(0, 1)).to('cpu')
+                stds += activations.std(dim=(0, 1)).to('cpu') XXX, calculate running mean/std better
+
             logger.log_batch(activations, input_ids)
 
 
             cache.append(activations.to('cpu'))
-        
+    
+    cache.save_mean_std(means, stds)
+
     cache.finalize()
     logger.finalize()

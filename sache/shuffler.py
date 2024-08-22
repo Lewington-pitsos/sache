@@ -1,13 +1,12 @@
 import torch
-import random
 
 from sache.cache import WCache
 
-class ShufflingCache():
+class ShufflingWCache():
     @classmethod
     def from_params(cls, buffer_size=8, *args, **kwargs):
         cache = WCache(*args, **kwargs)
-        return ShufflingCache(cache, buffer_size)
+        return ShufflingWCache(cache, buffer_size)
 
     def __init__(self, cache, buffer_size=8):
         if buffer_size < 2:
@@ -37,6 +36,9 @@ class ShufflingCache():
             
             self._buffer = self._buffer[half:]
             self._batches_in_buffer = self.buffer_size // 2
+
+    def save_mean_std(self, mean, std):
+        self.cache.save_mean_std(mean, std)
 
     def finalize(self):
         if len(self._buffer) > 0:

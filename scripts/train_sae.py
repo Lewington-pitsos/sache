@@ -8,7 +8,7 @@ import fire
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sache.cache import S3RCache, ShufflingCache
+from sache.cache import S3RCache, ShufflingRCache
 from sache.train import SAE, TrainLogger, MeanStdNormalizer, NOOPLogger, SwitchSAE, TopKSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 
@@ -55,12 +55,16 @@ def main(
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)
-        normalizer = MeanStdNormalizer('sache/normalize/merciless-citadel', device=device)
 
         cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
+
+        mean = torch.tensor(cache.metadata['mean'], device=device)
+        std = torch.tensor(cache.metadata['std'], device=device)
+        normalizer = MeanStdNormalizer(mean, std)
+
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * 1024
-        cache = ShufflingCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
+        cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 2, d_in=d_in,  dtype=torch.float32)
 
         overall_start = time.time()
         start = time.time()
@@ -128,7 +132,6 @@ def main(
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
     print(f"Overall MB per second: {round(total_size / MB * n_steps) / (overall_end - overall_start):.2f}")
     cache.finalize()
-
 
 if __name__ == "__main__":
     fire.Fire(main)

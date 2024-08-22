@@ -2,7 +2,7 @@ import shutil
 import os
 from io import BytesIO
 import json
-from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache, ShufflingCache
+from sache.cache import S3WCache, BUCKET_NAME, S3RCache, RBatchingCache, ShufflingRCache
 import torch
 import boto3
 import pytest
@@ -183,7 +183,7 @@ def test_shuffling_read_cache():
     data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
     mc = MockCache(data)
 
-    sc = ShufflingCache(mc, batch_size * seq_len * 6, batch_size * seq_len, d_in, dtype=torch.float32)
+    sc = ShufflingRCache(mc, batch_size * seq_len * 6, batch_size * seq_len, d_in, dtype=torch.float32)
 
     for i, batch in enumerate(sc):
         assert batch.shape == (batch_size * seq_len, d_in)
@@ -203,7 +203,7 @@ def test_small_bs_shuffling_read_cache():
     data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
     mc = MockCache(data)
 
-    sc = ShufflingCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
+    sc = ShufflingRCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
 
     for i, batch in enumerate(sc):
         assert batch.shape == (out_bs * seq_len, d_in)
@@ -223,7 +223,7 @@ def test_big_cache_bs_shuffling_read_cache():
     data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(5)]
     mc = MockCache(data)
 
-    sc = ShufflingCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
+    sc = ShufflingRCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
 
     for i, batch in enumerate(sc):
         assert batch.shape == (out_bs * seq_len, d_in)

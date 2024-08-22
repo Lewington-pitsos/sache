@@ -28,8 +28,10 @@ class NoopCache():
     def finalize(self):
         pass
 
+    def save_mean_std(self, *args, **kwargs):
+        pass
 
-class ThreadedReadCache:
+class ThreadedWCache:
     def __init__(self, cache):
         self.cache = cache
         self.lock = threading.Lock()
@@ -59,6 +61,9 @@ class ThreadedReadCache:
     def append(self, activations):
         self._run_in_thread(self.cache.append, activations)
 
+    def save_mean_std(self, mean, std):
+        self.cache.save_mean_std(mean, std)
+
     def finalize(self):
         self.close()
         self.cache.finalize()
@@ -87,17 +92,9 @@ class S3WCache():
 
     def append(self, activations):
         if self.metadata is None:
-            self.metadata = {
-                'batch_size': activations.shape[0],
-                'sequence_length': activations.shape[1],
-                'dtype': str(activations.dtype),
-                'd_in': activations.shape[2],
-                'bytes_per_file': activations.element_size() * activations.numel() * self.save_every,
-                'batches_per_file': self.save_every,
-                'shape': (activations.shape[0] * self.save_every, *activations.shape[1:])
-            }
+            self.metadata = _get_metadata(activations, self.save_every)
 
-            self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=self.bucket_name, Key=_metadata_path(self.run_name))
+            self._save_metadata()
         else:
             if activations.shape[0] != self.metadata['batch_size']:
                 print(f'Warning: batch size mismatch. Expected {self.metadata["batch_size"]}, got {activations.shape}')
@@ -114,13 +111,23 @@ class S3WCache():
             return self._save_in_mem()
 
         return None
+    
+    def _save_metadata(self):
+        self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=self.bucket_name, Key=_metadata_path(self.run_name))
+
+    def save_mean_std(self, mean, std):
+        self.metadata['mean'] = mean.tolist()
+        self.metadata['std'] = std.tolist()
+
+        self._save_metadata()
 
     def finalize(self):
         # effectively a no-op since append will always save unless there are too few activations
         # to make up the block, in which case we do not want to save them or we lose file size uniformity
         if self.metadata is None:
             raise ValueError('Cannot finalize cache without any data')
-
+        
+        
     def _save_in_mem(self):
         id = self._save(torch.cat(self._in_mem), str(uuid4()))
         self._in_mem = []
@@ -189,7 +196,6 @@ async def request_chunk(session, url, start, end):
             return start, await response.read()
     except Exception as e:
         return e
-
 
 def download_loop(*args):
     asyncio.run(_async_download(*args,))
@@ -408,7 +414,7 @@ class S3RCache():
         self._ongoing_downloads.value = 0
         self._running_processes = []
 
-class ShufflingCache():
+class ShufflingRCache():
     def __init__(self, cache, buffer_size, batch_size, d_in, dtype):
         assert buffer_size % batch_size == 0, f'buffer_size must be a multiple of batch_size, got buffer_size: {buffer_size}, batch_size: {batch_size}'
 
@@ -523,6 +529,17 @@ class RBatchingCache():
 
         return batch
 
+def _get_metadata(activations, save_every):
+    return {
+        'batch_size': activations.shape[0],
+        'sequence_length': activations.shape[1],
+        'dtype': str(activations.dtype),
+        'd_in': activations.shape[2],
+        'bytes_per_file': activations.element_size() * activations.numel() * save_every,
+        'batches_per_file': save_every,
+        'shape': (activations.shape[0] * save_every, *activations.shape[1:])
+    }
+
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=OUTER_CACHE_DIR):
         self.save_every = save_every
@@ -533,19 +550,41 @@ class WCache():
             os.makedirs(self.cache_dir, exist_ok=True)
 
         self._in_mem = []
+        self.metadata = None
 
     def n_saved(self):
         return len(os.listdir(self.cache_dir))
 
     def append(self, activations):
+        if self.metadata is None:
+            self.metadata = _get_metadata(activations, self.save_every)
+
+            self._save_metadata()
+
         self._in_mem.append(activations)
 
         if len(self._in_mem) >= self.save_every:
             self._save_in_mem()
 
+    def _save_metadata(self):
+        metadata_file = os.path.join(self.outer_cache_dir, 'metadata.json')
+
+        with open(metadata_file, 'w') as f:
+            json.dump(self.metadata, f)
+        
+
     def finalize(self):
+        if self.metadata is None:
+            raise ValueError("Cannot finalize cache with no metadata")
+        
         if self._in_mem:
             self._save_in_mem()
+
+    def save_mean_std(self, mean, std):
+        self.metadata['mean'] = mean.tolist()
+        self.metadata['std'] = std.tolist()
+        
+        self._save_metadata()
 
     def _save_in_mem(self):
         self._save(torch.cat(self._in_mem), 'saved', str(uuid4()))

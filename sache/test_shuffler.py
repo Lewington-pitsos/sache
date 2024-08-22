@@ -5,21 +5,21 @@ import pytest
 
 import torch
 
-from sache.shuffler import ShufflingCache
-from sache.cache import WCache, ThreadedReadCache
+from sache.shuffler import ShufflingWCache
+from sache.cache import WCache, ThreadedWCache
 
 
 @pytest.fixture
 def shuffling_cache():
     cache = WCache('test', save_every=1)
 
-    yield ShufflingCache(cache, buffer_size=4)
+    yield ShufflingWCache(cache, buffer_size=4)
 
     shutil.rmtree(cache.outer_cache_dir)
 
 def test_threaded_shuffling_cache(shuffling_cache):
     torch.manual_seed(0)
-    cache = ThreadedReadCache(shuffling_cache)
+    cache = ThreadedWCache(shuffling_cache)
     for i in range(9):
         cache.append(torch.tensor([[i, i, i, i]] * 10))
 

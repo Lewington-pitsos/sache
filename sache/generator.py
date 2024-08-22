@@ -10,7 +10,7 @@ from multiprocessing import cpu_count
 
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache
 from sache.tok import chunk_and_tokenize
-from sache.log import ProcessLogger
+from sache.log import ProcessLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
 from sache.constants import BUCKET_NAME
 
@@ -125,65 +125,69 @@ def generate(
 
     torch.manual_seed(seed)
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-    logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)
-    logger.log({
-        'event': 'start_generating',
-        'run_name': run_name,
-        'bs_per_cache': batches_per_cache,
-        'transformer_name': transformer_name,
-        'max_length': max_length,
-        'batch_size': batch_size,
-        'text_column_name': text_column_name,
-        'device': device,
-        'layer': layer,
-        'hook_name': hook_name,
-        'cache_type': cache_type,
-        'seed': seed,
-    })
 
-    cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
+    if log_every is not None:
+        logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)
+    else:
+        logger = NOOPLogger()
 
-    dataset = chunk_and_tokenize(
-        dataset, 
-        transformer.tokenizer, 
-        text_key=text_column_name, 
-        max_seq_len=max_length,
-        num_proc=num_proc
-    )
+    with logger as lg:
+        lg.log({
+            'event': 'start_generating',
+            'run_name': run_name,
+            'bs_per_cache': batches_per_cache,
+            'transformer_name': transformer_name,
+            'max_length': max_length,
+            'batch_size': batch_size,
+            'text_column_name': text_column_name,
+            'device': device,
+            'layer': layer,
+            'hook_name': hook_name,
+            'cache_type': cache_type,
+            'seed': seed,
+        })
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    
-    transformer.eval()
-    means = None
-    stds = None
-    with torch.no_grad():
-        for i, batch in enumerate(dataloader):
-            input_ids = batch['input_ids'].to(device)
+        cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
 
-            _, activations = transformer.run_with_cache(
-                input_ids, 
-                prepend_bos=False, # each sample is actually multiple concatenated samples
-                stop_at_layer=layer
-            )
-            activations = activations[hook_name]
+        dataset = chunk_and_tokenize(
+            dataset, 
+            transformer.tokenizer, 
+            text_key=text_column_name, 
+            max_seq_len=max_length,
+            num_proc=num_proc
+        )
 
-            if means is None:
-                means = activations.mean(dim=(0, 1)).detach().clone().to('cpu')
-                stds = activations.std(dim=(0, 1)).detach().clone().to('cpu')
-            else:
-                means += activations.mean(dim=(0, 1)).to('cpu')
-                stds += activations.std(dim=(0, 1)).to('cpu')
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        
+        transformer.eval()
+        means = None
+        stds = None
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+                input_ids = batch['input_ids'].to(device)
 
-            logger.log_batch(activations, input_ids)
+                _, activations = transformer.run_with_cache(
+                    input_ids, 
+                    prepend_bos=False, # each sample is actually multiple concatenated samples
+                    stop_at_layer=layer
+                )
+                activations = activations[hook_name]
+
+                if means is None:
+                    means = activations.mean(dim=(0, 1)).detach().clone().to('cpu')
+                    stds = activations.std(dim=(0, 1)).detach().clone().to('cpu')
+                else:
+                    means += activations.mean(dim=(0, 1)).to('cpu')
+                    stds += activations.std(dim=(0, 1)).to('cpu')
+
+                lg.log_batch(activations, input_ids)
 
 
-            cache.append(activations.to('cpu'))
+                cache.append(activations.to('cpu'))
 
-        means /= i
-        stds /= i
+            means /= i
+            stds /= i
 
-    
-    cache.save_mean_std(means, stds)
-
-    cache.finalize()
-    logger.finalize()
+        
+        cache.save_mean_std(means, stds)
+        cache.finalize()

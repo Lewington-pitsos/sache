@@ -143,13 +143,3 @@ class TrainLogger(ProcessLogger):
         }
 
         self.log_sae(sae, info=info)
-
-class NOOPLogger:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        pass
-
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None

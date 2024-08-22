@@ -58,6 +58,7 @@ class ProcessLogger():
             wandb.log(wandb_message)
 
         self._log_local(data)
+
     def finalize(self):
         if self.s3_backup_bucket is not None: 
             self.s3_client.upload_file(self._log_filename(), self.s3_backup_bucket, self.s3_backup_path)
@@ -97,3 +98,13 @@ def download_logs(bucket_name=BUCKET_NAME, s3_folder_prefix=LOG_DIR, local_downl
             # Download the file
             s3_client.download_file(bucket_name, file_path, local_file_path)
             print(f"Downloaded {file_path} to {local_file_path}")
+
+class NOOPLogger:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None

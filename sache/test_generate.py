@@ -1,3 +1,4 @@
+import json
 import os
 from datasets import load_dataset
 
@@ -25,14 +26,21 @@ def test_generate():
         layer=3,
         hook_name='blocks.2.hook_resid_post',
         cache_type='local',
-        log_every=1,
+        log_every=None,
         num_proc=4,
     )
 
     full_cache_dir = os.path.join(OUTER_CACHE_DIR, human_readable_time, INNER_CACHE_DIR)
     cache_files = os.listdir(full_cache_dir)
-    print(len(cache_files))
     assert len(cache_files) == 38
+
+    with open(os.path.join(OUTER_CACHE_DIR, human_readable_time, 'metadata.json')) as f:
+        metadata = json.load(f)
+
+    assert 'mean' in metadata
+    assert 'std' in metadata
+    assert len(metadata['mean']) == 512
+    assert len(metadata['std']) == 512
 
     for file in cache_files:
         os.remove(os.path.join(full_cache_dir, file))

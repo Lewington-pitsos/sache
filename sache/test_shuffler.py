@@ -21,7 +21,7 @@ def test_threaded_shuffling_cache(shuffling_cache):
     torch.manual_seed(0)
     cache = ThreadedWCache(shuffling_cache)
     for i in range(9):
-        cache.append(torch.tensor([[i, i, i, i]] * 10))
+        cache.append(torch.ones(10, 5, 4) * i)
 
     cache.finalize()
 
@@ -35,17 +35,16 @@ def test_threaded_shuffling_cache(shuffling_cache):
     file_modified_first = min(cache_files, key=lambda f: os.path.getmtime(os.path.join(cache_dir, f)))
     activations = torch.load(os.path.join(cache_dir, file_modified_first), weights_only=True)
 
-    assert activations.shape == (10, 4)
-    print(activations)
+    assert activations.shape == (10, 5, 4)
     assert torch.min(activations) != torch.max(activations)
 
     all_activations = torch.cat([torch.load(os.path.join(cache_dir, f), weights_only=True) for f in cache_files])
-    assert all_activations.shape == (90, 4)
+    assert all_activations.shape == (90, 5, 4)
 
 def test_shuffling_cache_shuffles(shuffling_cache):
     torch.manual_seed(0)
     for i in range(9):
-        shuffling_cache.append(torch.tensor([[i, i, i, i]] * 10))
+        shuffling_cache.append(torch.ones(10, 5, 4) * i)
 
     shuffling_cache.finalize()
 
@@ -57,9 +56,9 @@ def test_shuffling_cache_shuffles(shuffling_cache):
     file_modified_first = min(cache_files, key=lambda f: os.path.getmtime(os.path.join(cache_dir, f)))
     activations = torch.load(os.path.join(cache_dir, file_modified_first), weights_only=True)
 
-    assert activations.shape == (10, 4)
+    assert activations.shape == (10, 5, 4)
     print(activations)
     assert torch.min(activations) != torch.max(activations)
 
     all_activations = torch.cat([torch.load(os.path.join(cache_dir, f), weights_only=True) for f in cache_files])
-    assert all_activations.shape == (90, 4)
+    assert all_activations.shape == (90, 5, 4)

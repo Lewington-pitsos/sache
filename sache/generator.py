@@ -154,8 +154,8 @@ def generate(
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
     transformer.eval()
-    means = torch.tensor(XXX, device='cpu', requires_grad=False)
-    stds = torch.tensor(XXX, device='cpu', requires_grad=False)
+    means = None
+    stds = None
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             input_ids = batch['input_ids'].to(device)
@@ -167,14 +167,21 @@ def generate(
             )
             activations = activations[hook_name]
 
-            with torch.no_grad():
+            if means is None:
+                means = activations.mean(dim=(0, 1)).detach().clone().to('cpu')
+                stds = activations.std(dim=(0, 1)).detach().clone().to('cpu')
+            else:
                 means += activations.mean(dim=(0, 1)).to('cpu')
-                stds += activations.std(dim=(0, 1)).to('cpu') XXX, calculate running mean/std better
+                stds += activations.std(dim=(0, 1)).to('cpu')
 
             logger.log_batch(activations, input_ids)
 
 
             cache.append(activations.to('cpu'))
+
+        means /= i
+        stds /= i
+
     
     cache.save_mean_std(means, stds)
 

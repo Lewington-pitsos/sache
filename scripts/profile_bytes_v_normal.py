@@ -106,20 +106,3 @@ async def main():
         print(f"Time taken: {elapsed:.2f} seconds, MB per second: {n_iter * batch_size / MB / elapsed:.2f}")
 
 asyncio.run(main())
-
-# with ProcessPoolExecutor(max_workers=24) as executor:
-#     start_time = time.time()
-#     futures = []
-#     for i in range(0, n_iter):
-        
-#         start = i * batch_size
-#         end = (i + 1) * batch_size - 1
-
-#         futures.append(executor.submit(get_chunk, start, end))
-
-#     for future in as_completed(futures):
-#         chunk = future.result()
-
-#     end_time = time.time()
-#     elapsed = end_time - start_time
-#     print(f"Time taken: {elapsed:.2f} seconds, MB per second: {n_iter * batch_size / MB / elapsed:.2f}")

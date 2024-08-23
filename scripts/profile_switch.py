@@ -16,6 +16,7 @@ n_feats=24576
 d_in = 768
 
 bss = [8192*4, 8192*16, 8192 * 32]
+largest_bs = max(bss)
 results = defaultdict(list)
 for bs in bss:
     for n_experts in es:
@@ -31,27 +32,29 @@ for bs in bss:
         optimizer = torch.optim.Adam(sae.parameters(), lr=1e-4)
 
         for i in range(n_trials):
-            batch = torch.empty(bs, d_in, device='cpu')
+            outer_batch = torch.empty(largest_bs, d_in, device='cpu')
             torch.cuda.synchronize()
             start = time.time()
-            batch = batch.clone().to(device)
-            optimizer.zero_grad()
+            
+            for j in range(0, largest_bs, bs):
+                batch = outer_batch[j:j+bs].detach().to(device)
+                optimizer.zero_grad()
 
-            output = sae.forward_descriptive(batch)
+                output = sae.forward_descriptive(batch)
 
-            mse = ((batch - output['reconstruction']) ** 2).sum(-1).mean()
-            mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
+                mse = ((batch - output['reconstruction']) ** 2).sum(-1).mean()
+                mean_pred_mse = ((batch - batch.mean(0)) ** 2).sum(-1).mean()
 
 
-            loss = mse / mean_pred_mse
+                loss = mse / mean_pred_mse
 
-            loss.backward()
-            optimizer.step()
+                loss.backward()
+                optimizer.step()
 
-            torch.cuda.synchronize()
+                torch.cuda.synchronize()
+            
             end = time.time()
-
-            config_results.append((bs / 350) / (end-start))
+            config_results.append((largest_bs / 350) / (end-start))
 
         results[str(n_experts)].append(config_results)
 

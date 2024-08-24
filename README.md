@@ -1,5 +1,7 @@
 # Training a Sparse Autoencoder on GPT2 in < 35 minutes
 
+## Overview
+
 This codebase is used to:
 1. Save LLM activations to S3, i.e.
     1. Spin up a LLM
@@ -11,10 +13,11 @@ This codebase is used to:
     2. Load the activations from S3
     3. Train a sparse autoencoder on those activations
 
-
-<<<<<<<<<<<<<<<<<< ADD DIAGRAM >>>>>>>>>>>>>>>>>>
+![](images/overview.png)
 
 The way this codebase should *probably* be used is as a parts shop which can be cannibalized for the user's own unholy purposes. It's written to be easier to read and understand at the cost of some generalizability. In particular it can be used as a guide for setting up high throughput s3 tensor reading and writing (see `sache/cache.py`). Installation instructions, tests and usage instructions are included below so users can achieve confidence that the code actually works.
+
+Some more details can be found on the corresponding [lesswrong article](https://www.lesswrong.com/posts/AtJdPZkMdsakLc6mB/training-a-sae-in-less-than-30-minutes-on-16gb-of-vram-using)
 
 ## Installation
 
@@ -41,8 +44,7 @@ python scripts/generate.py --bucket_name my_epic_bucket
 
 Will start the generation process. The "run name" is the prefix under which the activations will be saved in s3. Note that they are saved in a janky format (raw bytes) to make them quicker to load on the other end. Once saved they must be loaded via `torch.frombuffer` (see `sache/cache.py`). The activations are stored in ~3GB files consisting of (batch_size, sequence_length, hidden_dim) = (1024, 1024, 768) tensors.
 
-Example activations for `gpt2-small` on 678,428,672 tokens are available [here](). <<<<<<<<<<<<<<>>>>>>>>>>>>>>
-
+Example activations for `gpt2-small` on 678,428,672 tokens are available [here](https://s3.amazonaws.com/lewington-pitsos-sache).
 ## Deploying a server to AWS
 
 Install terraform, then edit `server.tf` so that the `aws_key_pair.public_key` points to a local public key (which will allow SSH access to the spun-up server.)
@@ -53,7 +55,7 @@ Then from the root of this project run
 terraform -chdir=./terraform/environments/production apply
 ```
 
-This setup is important since loading activations from s3 will be super slow unless the loading sever is deployed inside the same region as the s3 bucket king. Other instance types will mostly also be incredibly slow, see ec2 instance [throughput limits]() <<<<<<<<<<<<>>>>>>>>>>>>. Once deployed the instance can be SSH'd into and training can commence.
+This setup is important since loading activations from s3 will be super slow unless the loading sever is deployed inside the same region as the s3 bucket king. Other instance types will mostly also be incredibly slow, see ec2 instance [throughput limits](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-network-bandwidth.html) . Once deployed the instance can be SSH'd into and training can commence.
 
 Note: the `aws_instance.ami` has been carefully chosen to make the surprisingly finnicky nvidia actually work, but it will only work inside `us-east-1`. Deployments to other regions will require the equivalent ami for that region.
 
@@ -70,9 +72,3 @@ python scripts/train_sae.py --use_wandb --log_bucket bucket_full_of_karpathy_fan
 Using the settings specified in the terraform and loading the `merciless_citadel` activations you will achieve something like 420 mbps throughput, which equates to 300,000,000 tokens in ~35 minutes.
 
 Note that by default we log metrics and histograms locally, to wandb and also s3. See `sache/analysis.ipynb` for how to read the logged data.
-
-
-## Loading and using the SAE
-
-
-<<<<<<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>>>>

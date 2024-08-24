@@ -51,8 +51,9 @@ for bs in bss:
                 loss.backward()
                 optimizer.step()
 
-                torch.cuda.synchronize()
+                print(i, j, bs, n_experts)
             
+            torch.cuda.synchronize()
             end = time.time()
             config_results.append((largest_bs / 350) / (end-start))
 
@@ -67,7 +68,7 @@ for k in results.keys():
     plt.legend()
     plt.xlabel('Batch size')
     plt.ylabel('MB/s')
-    plt.title('MB/s vs Batch Size on g4dn.xlarge')
+    plt.title('MB/s vs Batch Size')
 
     if not os.path.exists('cruft'):
         os.makedirs('cruft')

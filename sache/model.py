@@ -67,7 +67,6 @@ class SwitchSAE(torch.nn.Module):
             'expert_prop': expert_prop,
             'expert_weighting': expert_weighting,
         }
-              # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
 
 def eagre_decode(topk, dec):
     latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)

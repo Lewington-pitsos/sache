@@ -136,6 +136,10 @@ class SAE(torch.nn.Module):
         return {
             'reconstruction': reconstruction,
             'latent': latent,
+            'experts_chosen': None,
+            'expert_prop': None,
+            'expert_weighting': None,
+            'active_latents': None,
         }
 
     def forward(self, x):

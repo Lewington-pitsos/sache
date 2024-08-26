@@ -101,10 +101,12 @@ class TrainLogger(ProcessLogger):
                 'event': 'training_batch', 
                 'mse': mse.item(),
                 'scaled_mse': scaled_mse.item(),
-                'L0': (latent > 0).float().sum(-1).mean().item(),
                 'loss': loss.item(),
                 'batch_learning_rate': lr
             }
+
+            if latent is not None:
+                message['L0'] = (latent > 0).float().sum(-1).mean().item()
 
             if dead_pct is not None:
                 message['dead_feature_prop'] = dead_pct.item()

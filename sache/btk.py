@@ -150,6 +150,7 @@ class TopKSAE(BaseAutoencoder):
 
     def get_loss_dict(self, x, x_reconstruct, acts, acts_topk, x_mean, x_std):
         l2_loss = (x_reconstruct.float() - x.float()).pow(2).mean()
+        variance = ((x - x.mean(0)) ** 2).mean()
         l1_norm = acts_topk.float().abs().sum(-1).mean()
         l1_loss = self.cfg["l1_coeff"] * l1_norm
         l0_norm = (acts_topk > 0).float().sum(-1).mean()
@@ -166,6 +167,7 @@ class TopKSAE(BaseAutoencoder):
             "loss": loss,
             "l1_loss": l1_loss,
             "l2_loss": l2_loss,
+            "l2_loss_scaled": l2_loss / variance,
             "l0_norm": l0_norm,
             "l1_norm": l1_norm,
             "aux_loss": aux_loss,
@@ -339,3 +341,19 @@ class JumpReLUSAE(BaseAutoencoder):
             "l1_norm": l0,
         }
         return output
+    
+
+
+    #     sae = TopKSAE({
+    #     "top_k": k,
+    #     "l1_coeff": l1_coefficient,
+    #     "n_batches_to_dead": 5,
+    #     "top_k_aux": 512,
+    #     "seed": 0,
+    #     "aux_penalty": (1/32),
+    #     "act_size": d_in,
+    #     "dict_size": n_feats,
+    #     "device": device,
+    #     "input_unit_norm": True,
+    #     "dtype": torch.float32,
+    # })

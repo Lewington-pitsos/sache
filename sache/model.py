@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 class SwitchSAE(torch.nn.Module):
-    def __init__(self, n_features, n_experts, d_in, device):
+    def __init__(self, n_features, n_experts, d_in, device, base_expert=False):
         super(SwitchSAE, self).__init__()
 
         if n_features % n_experts != 0:
@@ -10,10 +10,11 @@ class SwitchSAE(torch.nn.Module):
 
         self.n_experts = n_experts
         self.device=device
+        self.base_expert = base_expert
         self.expert_dim = n_features // n_experts
         self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
-        self.enc = torch.nn.Parameter(torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
+        self.enc = torch.nn.Parameter(torch.randn(self.n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(self.enc.mT.clone())
 
@@ -21,7 +22,16 @@ class SwitchSAE(torch.nn.Module):
         self.router = torch.nn.Parameter(torch.randn(d_in, n_experts, device=device) / (d_in ** 0.5))
         self.softmax = torch.nn.Softmax(dim=-1)
 
+        if self.base_expert:
+            self.base_enc = torch.nn.Parameter(torch.randn(d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
+            self.base_dec = torch.nn.Parameter(self.base_enc.mT.clone())
+            self.latent_dim = self.expert_dim * 2
+        else:
+            self.latent_dim = self.expert_dim
+
+
     def _encode(self, pre_activation):
+
         return self.activation(pre_activation)
 
     def _decode(self, latent, dec):
@@ -31,8 +41,8 @@ class SwitchSAE(torch.nn.Module):
         batch_size = activations.shape[0]
         # accumulators
         _full_recons = torch.zeros_like(activations) # (batch_size, d_in)
-        _full_latent = torch.zeros((activations.size(0), self.expert_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
-        _was_active = torch.zeros(self.n_experts, self.expert_dim, device=self.device, requires_grad=False, dtype=bool) # (n_experts, expert_dim)
+        _full_latent = torch.zeros((batch_size, self.latent_dim), device=self.device, requires_grad=False) # (batch_size, expert_dim)
+        _was_active = torch.zeros(self.n_experts, self.latent_dim, device=self.device, requires_grad=False, dtype=bool) # (n_experts, expert_dim)
         
         expert_probabilities = self.softmax((activations - self.router_b) @ self.router) #  (batch_size, n_experts)
         expert_max_prob, expert_idx = torch.max(expert_probabilities, dim=-1) # (batch_size,), (batch_size,)
@@ -43,15 +53,20 @@ class SwitchSAE(torch.nn.Module):
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
                 expert_mask = expert_idx == expert_id # (n_to_expert,)
-                expert_input = activations[expert_mask] - self.pre_b # (n_to_expert, d_in)
+                expert_input = activations[expert_mask] # (n_to_expert, d_in)
 
+                expert_input = expert_input - self.pre_b
                 routed_enc = self.enc[expert_id] # (d_in, expert_dim)
                 routed_dec = self.dec[expert_id] # (expert_dim, d_in)
+
+                if self.base_expert:
+                    routed_enc = torch.concat([routed_enc, self.base_enc], dim=1)
+                    routed_dec = torch.concat([self.base_dec, routed_dec], dim=0)
+                
                 latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
                 latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, d_in)
-
                 _full_latent[expert_mask] = latent
-                _full_recons[expert_mask] = reconstruction 
+                _full_recons[expert_mask] = reconstruction
                 with torch.no_grad():
                     _was_active[expert_id] = torch.max(latent, dim=0).values > 1e-3
 

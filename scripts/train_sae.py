@@ -30,16 +30,25 @@ def main(
         log_bucket=BUCKET_NAME,
         data_bucket=BUCKET_NAME,
         shuffle=True,
-        wandb_project=None
+        wandb_project=None,
+        base_expert=False,
     ):
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project)
-    sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
+    sae = TopKSwitchSAE(
+        k=k, 
+        n_features=n_feats, 
+        n_experts=n_experts, 
+        d_in=d_in, 
+        device=device, 
+        efficient=False, 
+        base_expert=base_expert,
+    )
 
-    dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
+    dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
 
     with train_logger as lg:
         lg.log_params({

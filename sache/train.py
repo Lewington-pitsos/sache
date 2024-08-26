@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from sache.log import ProcessLogger
-from sache.model import SAE, SwitchSAE, TopKSwitchSAE
+from sache.model import SAE, SwitchSAE, TopKSwitchSAE, TopKSAE
 
 def get_histogram(tensor, bins=50):
     tensor = tensor.detach()
@@ -23,6 +23,8 @@ class TrainLogger(ProcessLogger):
 
     def log_sae(self, sae, info=None):
         if isinstance(sae, SAE):
+            message = self._log_sae(sae)
+        if isinstance(sae, TopKSAE):
             message = self._log_sae(sae)
         elif isinstance(sae, TopKSwitchSAE):
             message = self._log_switch_sae(sae)
@@ -74,9 +76,8 @@ class TrainLogger(ProcessLogger):
     def _log_sae(self, sae, info=None):
         with torch.no_grad():
             ecounts, eedges = get_histogram(sae.enc)
-            ebcounts, ebedges = get_histogram(sae.enc_b, bins=25)
+            ebcounts, ebedges = get_histogram(sae.pre_b, bins=25)
             dcounts, dedges = get_histogram(sae.dec)
-            dbcounts, dbedges = get_histogram(sae.dec_b, bins=25)
             
         return {
             'event': 'sae',
@@ -92,10 +93,6 @@ class TrainLogger(ProcessLogger):
                 'counts': dcounts,
                 'edges': dedges
             },
-            'dec_b': {
-                'counts': dbcounts,
-                'edges': dbedges
-            }
         }
 
     def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr):
@@ -103,13 +100,17 @@ class TrainLogger(ProcessLogger):
             message = {
                 'event': 'training_batch', 
                 'mse': mse.item(),
-                'dead_feature_prop': dead_pct.item(),
                 'scaled_mse': scaled_mse.item(),
                 'L0': (latent > 0).float().sum(-1).mean().item(),
                 'loss': loss.item(),
-                'expert_privilege': expert_privilege.item(),
                 'batch_learning_rate': lr
             }
+
+            if dead_pct is not None:
+                message['dead_feature_prop'] = dead_pct.item()
+
+            if expert_privilege is not None:
+                message['expert_privilege'] = expert_privilege.item()
 
             if l1 is not None:
                 message['l1'] = l1.item()
@@ -126,35 +127,40 @@ class TrainLogger(ProcessLogger):
         batch = batch[:self.max_sample]
         reconstruction = reconstruction[:self.max_sample]
         latent = latent[:self.max_sample]
-        experts_chosen = experts_chosen[:self.max_sample]
 
         with torch.no_grad():
             binput, einput = get_histogram(batch)
             brecon, erecon = get_histogram(reconstruction)
             bdelta, edelta = get_histogram(batch - reconstruction)
             blatent, elatent = get_histogram(latent)
-            bexperts, eexperts = get_histogram(experts_chosen, bins=sae.n_experts)
 
             bencgrad, eencgrad = get_histogram(sae.enc.grad)
             bdecgrad, edecgrad = get_histogram(sae.dec.grad)
-            broutergrad, eroutergrad = get_histogram(sae.router.grad)
             bpregrad, epregrad = get_histogram(sae.pre_b.grad)
             bdec, edec = get_histogram(sae.dec)
 
 
-        info = {
-            'input_hist': { 'counts': binput, 'edges': einput},
-            'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
-            'delta_hist': { 'counts': bdelta, 'edges': edelta},
-            'latent_hist': { 'counts': blatent, 'edges': elatent},
-            'experts_chosen_hist': { 'counts': bexperts, 'edges': eexperts},
-            
-            'dec_hist': { 'counts': bdec, 'edges': edec},
-            'enc_grad_hist': { 'counts': bencgrad, 'edges': eencgrad},
-            'dec_grad_hist': { 'counts': bdecgrad, 'edges': edecgrad},
-            'router_grad_hist': { 'counts': broutergrad, 'edges': eroutergrad},
-            'pre_grad_hist': { 'counts': bpregrad, 'edges': epregrad}
-        
-        }
+            info = {
+                'input_hist': { 'counts': binput, 'edges': einput},
+                'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
+                'delta_hist': { 'counts': bdelta, 'edges': edelta},
+                'latent_hist': { 'counts': blatent, 'edges': elatent},
+                
+                'dec_hist': { 'counts': bdec, 'edges': edec},
+
+                'enc_grad_hist': { 'counts': bencgrad, 'edges': eencgrad},
+                'dec_grad_hist': { 'counts': bdecgrad, 'edges': edecgrad},
+                'pre_grad_hist': { 'counts': bpregrad, 'edges': epregrad}
+            }
+
+            if experts_chosen is not None:
+                experts_chosen = experts_chosen[:self.max_sample]
+                bexperts, eexperts = get_histogram(experts_chosen, bins=sae.n_experts)
+
+                info['experts_chosen_hist'] = { 'counts': bexperts, 'edges': eexperts}
+
+            if hasattr(sae, 'router'):
+                broutergrad, eroutergrad = get_histogram(sae.router.grad)
+                info['router_grad_hist'] = { 'counts': broutergrad, 'edges': eroutergrad}
 
         self.log_sae(sae, info=info)

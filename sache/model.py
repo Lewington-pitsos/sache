@@ -81,6 +81,9 @@ class SwitchSAE(torch.nn.Module):
             'expert_weighting': expert_weighting,
         }
 
+def encode_topk(pre_activation, k):
+    return torch.topk(pre_activation, k=k, dim=-1)
+
 def eagre_decode(topk, dec):
     latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
     latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
@@ -101,7 +104,7 @@ class TopKSwitchSAE(SwitchSAE):
             self._decode = self._eagre_decode
 
     def _encode(self, pre_activation):
-        return (torch.topk(pre_activation, k=self.k, dim=-1), pre_activation)
+        return (encode_topk(pre_activation, self.k), pre_activation)
 
     def _eagre_decode(self, latent_info, dec):
         topk, pre_activation = latent_info
@@ -110,16 +113,44 @@ class TopKSwitchSAE(SwitchSAE):
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):
         super(SAE, self).__init__()
-        self.enc = torch.nn.Parameter(torch.randn(d_in, n_features, device=device) / np.sqrt(n_features))
-        self.enc_b = torch.nn.Parameter(torch.randn(n_features, device=device) * 0.01)
-        self.dec = torch.nn.Parameter(torch.randn(n_features, d_in, device=device) / np.sqrt(d_in))
-        self.dec_b = torch.nn.Parameter(torch.zeros(d_in, dtype=torch.float32, device=device))
+
+        self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
+        self.enc = torch.nn.Parameter(torch.randn(d_in, n_features, device=device) / (2**0.5) / (d_in ** 0.5))
+        self.dec = torch.nn.Parameter(self.enc.mT.clone())
+
         self.activation = torch.nn.ReLU()
 
+    def _encode(self, x):
+        return self.activation(x)
+    
+    def _decode(self, latent, dec):
+        return latent, latent @ dec
+
     def forward_descriptive(self, x):
-        features = self.activation(x @ self.enc + self.enc_b) 
-        return features @ self.dec + self.dec_b, features
+
+        latent = self._encode((x - self.pre_b) @ self.enc) # (n_to_expert, expert_dim)
+        latent, reconstruction = self._decode(latent, self.dec)
+        
+        reconstruction = reconstruction + self.pre_b 
+
+        return {
+            'reconstruction': reconstruction,
+            'latent': latent,
+        }
 
     def forward(self, x):
         recon, _ = self.forward_descriptive(x)
         return recon
+
+class TopKSAE(SAE):
+    def __init__(self, k, *args, **kwargs):
+        super(TopKSAE, self).__init__(*args, **kwargs)
+        self.k = k
+        self.activation = None
+
+    def _encode(self, x):
+        return encode_topk(x, self.k)
+
+    def _decode(self, topk, dec):
+        return eagre_decode(topk, dec)
+        

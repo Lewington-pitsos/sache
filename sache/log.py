@@ -10,10 +10,10 @@ from sache.constants import BUCKET_NAME
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False):
+    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None):
         self.run_name = run_name
         self.logger_id = str(uuid4())
-        self.log_to_wandb = use_wandb
+        self.use_wandb = use_wandb
 
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR, exist_ok=True)
@@ -27,7 +27,11 @@ class ProcessLogger():
             self.s3_client = s3_client
 
         if use_wandb:
-            wandb.init(project=run_name, name=self.logger_id)
+            if wandb_project is None:
+                wandb_project = run_name
+            
+            self.wandb_project = wandb_project
+            wandb.init(project=wandb_project, name=self.logger_id)
 
     def _log_filename(self):
         return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
@@ -42,13 +46,13 @@ class ProcessLogger():
             f.write(json.dumps(data) + '\n')
 
     def log_params(self, params):
-        if self.log_to_wandb:
+        if self.use_wandb:
             wandb.config.update(params)
 
         self._log_local(params)
 
     def log(self, data):
-        if self.log_to_wandb:
+        if self.use_wandb:
             wandb_message = {}
 
             for k, v in data.items():
@@ -64,7 +68,7 @@ class ProcessLogger():
             self.s3_client.upload_file(self._log_filename(), self.s3_backup_bucket, self.s3_backup_path)
             print(f"Uploaded log file to {self.s3_backup_path}")
 
-        if self.log_to_wandb:
+        if self.use_wandb:
             wandb.finish()
 
     def __enter__(self):

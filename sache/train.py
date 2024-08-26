@@ -5,6 +5,7 @@ from sache.log import ProcessLogger
 from sache.model import SAE, SwitchSAE, TopKSwitchSAE
 
 def get_histogram(tensor, bins=50):
+    tensor = tensor.detach()
     hist = torch.histc(tensor, bins=bins, min=float(tensor.min()), max=float(tensor.max()))
 
     bin_edges = np.linspace(float(tensor.min()), float(tensor.max()), bins+1)
@@ -134,12 +135,26 @@ class TrainLogger(ProcessLogger):
             blatent, elatent = get_histogram(latent)
             bexperts, eexperts = get_histogram(experts_chosen, bins=sae.n_experts)
 
+            bencgrad, eencgrad = get_histogram(sae.enc.grad)
+            bdecgrad, edecgrad = get_histogram(sae.dec.grad)
+            broutergrad, eroutergrad = get_histogram(sae.router.grad)
+            bpregrad, epregrad = get_histogram(sae.pre_b.grad)
+            bdec, edec = get_histogram(sae.dec)
+
+
         info = {
             'input_hist': { 'counts': binput, 'edges': einput},
             'reconstruction_hist': { 'counts': brecon, 'edges': erecon},
             'delta_hist': { 'counts': bdelta, 'edges': edelta},
             'latent_hist': { 'counts': blatent, 'edges': elatent},
             'experts_chosen_hist': { 'counts': bexperts, 'edges': eexperts},
+            
+            'dec_hist': { 'counts': bdec, 'edges': edec},
+            'enc_grad_hist': { 'counts': bencgrad, 'edges': eencgrad},
+            'dec_grad_hist': { 'counts': bdecgrad, 'edges': edecgrad},
+            'router_grad_hist': { 'counts': broutergrad, 'edges': eroutergrad},
+            'pre_grad_hist': { 'counts': bpregrad, 'edges': epregrad}
+        
         }
 
         self.log_sae(sae, info=info)

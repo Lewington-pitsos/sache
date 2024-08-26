@@ -14,7 +14,7 @@ from sache.constants import MB, BUCKET_NAME
 
 def main(
         run_name = 'merciless-citadel',
-        n_steps = 289, # 647 is the total 288 means just over 300,000,000 tokens
+        n_steps = 289, # 647 is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
@@ -30,12 +30,13 @@ def main(
         log_bucket=BUCKET_NAME,
         data_bucket=BUCKET_NAME,
         shuffle=True,
+        wandb_project=None
     ):
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb)
+    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project)
     sae = TopKSwitchSAE(k=k, n_features=n_feats, n_experts=n_experts, d_in=d_in, device=device, efficient=False)
 
     dead_latents = torch.zeros(n_experts, n_feats // n_experts, device=device, requires_grad=False)
@@ -107,13 +108,11 @@ def main(
                 lr=optimizer.param_groups[-1]['lr'],
             )
 
-            if k == 0:
-                lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])
-
             loss.backward()
             optimizer.step()
 
             if token_count % tokens_per_file == 0:
+                lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=output['latent'], experts_chosen=output['experts_chosen'])
                 end = time.time()
                 elapsed = end - start
                 print(f"Time taken for file {j}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")

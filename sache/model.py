@@ -13,9 +13,7 @@ class SwitchSAE(torch.nn.Module):
         self.expert_dim = n_features // n_experts
         self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
 
-        self.enc = torch.nn.Parameter(
-            torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5)
-        )
+        self.enc = torch.nn.Parameter(torch.randn(n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(self.enc.mT.clone())
 

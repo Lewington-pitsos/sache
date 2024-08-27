@@ -7,7 +7,7 @@ import json
 from train_sae import main
 
 if __name__ == '__main__':
-    with open('cruft/configs.json') as f:
+    with open('cruft/configs-1e-4.json') as f:
         configs = json.load(f)
 
     for config in configs:

@@ -18,7 +18,7 @@ from sache.constants import MB, BUCKET_NAME
 
 def main(
         run_name = 'merciless-citadel',
-        n_files = 24, # 647 is the total, 288 means just over 300,000,000 tokens
+        n_files = 16, # 647 is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
@@ -28,6 +28,8 @@ def main(
         l1_coefficient = 2e-3,
         privilege_weighting = 2e-1,
         lr = 3e-4,
+        final_lr = None,
+        lr_warm_up_steps=None,
         samples_per_file = 1024,
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
@@ -59,13 +61,20 @@ def main(
     else:
         sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
 
+    if final_lr is None:
+        warm_up_lrs = None
+    else:
+        batches_per_file = samples_per_file // batch_size
+        warm_up_lrs = torch.linspace(lr, final_lr, batches_per_file * lr_warm_up_steps)
+    lr_idx = 0
+
     with train_logger as lg:
         lg.log_params({
             'k': k,
             'base_expert': base_expert,
             'switch_sae': switch_sae,
             'privilege_weighting': privilege_weighting,
-            'n_steps': n_files,
+            'n_files': n_files,
             'n_feats': n_feats,
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
@@ -91,7 +100,7 @@ def main(
         start = time.time()
         
         token_count = 0
-        for j, t in enumerate(cache):
+        for t in cache:
             t = t.to(device)
             for idx in range(0, t.shape[0], batch_size):
                 token_count += batch_size
@@ -129,15 +138,6 @@ def main(
                 latent = output['latent']
                 experts_chosen = output['experts_chosen']
 
-                # mse = output['l2_loss']
-                # scaled_mse = output['l2_loss_scaled']
-                # loss = output['loss']
-                # dead_latent_pct = None
-                # expert_privilege = None
-
-                # latent = output['feature_acts']
-                # experts_chosen = None
-
                 lg.log_loss(
                     mse=mse, 
                     scaled_mse=scaled_mse,
@@ -153,24 +153,31 @@ def main(
                 loss.backward()
                 optimizer.step()
 
-                if token_count % tokens_per_file == 0:
-                    lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
-                    end = time.time()
-                    elapsed = end - start
-                    overall_elapsed = end - overall_start
-                    print(f"Time taken for file {j}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
-                    lg.log({
-                        'event': 'file_processed',
-                        'time_to_process_file': elapsed, 
-                        'mb_downloaded': total_size / MB, 
-                        'mbps': total_size / MB / elapsed,
-                        'total_time_elapsed': overall_elapsed,
-                    })
+                if warm_up_lrs is not None and lr_idx < len(warm_up_lrs):
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = warm_up_lrs[lr_idx] 
+                    lr_idx += 1
 
-                    if token_count // tokens_per_file == n_files - 1:
-                        break
+            if token_count % tokens_per_file == 0:
+                lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
+                end = time.time()
+                elapsed = end - start
+                overall_elapsed = end - overall_start
+                file = token_count // tokens_per_file
+                print(f"Time taken for file {file}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
+                lg.log({
+                    'event': 'file_processed',
+                    'time_to_process_file': elapsed, 
+                    'mb_downloaded': total_size / MB, 
+                    'mbps': total_size / MB / elapsed,
+                    'total_time_elapsed': overall_elapsed,
+                    'file': file,
+                })
 
-                    start = time.time()
+                if file >= n_files - 1:
+                    break
+
+                start = time.time()
 
     overall_end = time.time()
     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")

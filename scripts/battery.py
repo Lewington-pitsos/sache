@@ -6,9 +6,13 @@
 import json
 from train_sae import main
 
+
+filename = 'cruft/k3.json'
 if __name__ == '__main__':
-    with open('cruft/configs-1e-4.json') as f:
+    with open(filename) as f:
         configs = json.load(f)
+
+    print(f'running {len(configs)} configs')
 
     for config in configs:
         print(f'Running with config: {config}')

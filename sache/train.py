@@ -161,6 +161,9 @@ class TrainLogger(ProcessLogger):
 
                 info['experts_chosen_hist'] = { 'counts': bexperts, 'edges': eexperts}
 
+            if hasattr(sae, 'k'):
+                info['k'] = sae.k
+
             if hasattr(sae, 'router'):
                 broutergrad, eroutergrad = get_histogram(sae.router.grad)
                 info['router_grad_hist'] = { 'counts': broutergrad, 'edges': eroutergrad}

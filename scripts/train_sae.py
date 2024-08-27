@@ -20,7 +20,7 @@ from sache.log import NOOPLogger
 def main(
         run_name = 'merciless-citadel',
         n_files = 16, # 647 is the total, 288 means just over 300,000,000 tokens
-        k = 32,
+        k = 256,
         n_feats = 24576,
         d_in = 768,
         batch_size = 4096,
@@ -29,8 +29,8 @@ def main(
         l1_coefficient = 2e-3,
         privilege_weighting = 2e-1,
         lr = 3e-4,
-        final_lr = None,
-        lr_warm_up_steps=None,
+        min_k =None,
+        k_step_tokens = 1024,
         samples_per_file = 1024,
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
@@ -40,9 +40,15 @@ def main(
         shuffle=True,
         wandb_project=None,
         base_expert=False,
-        switch_sae=False,  
+        switch_sae=True,  
         log_id=None, 
     ):
+
+    if min_k is not None:
+        assert min_k > 0
+        assert min_k < k
+        assert k_step_tokens > 0
+        assert k_step_tokens % batch_size == 0
 
     if outer_batch_size < batch_size:
         outer_batch_size = batch_size
@@ -67,18 +73,12 @@ def main(
     else:
         sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
 
-    if final_lr is None:
-        warm_up_lrs = None
-    else:
-        batches_per_file = samples_per_file // batch_size
-        warm_up_lrs = torch.linspace(lr, final_lr, batches_per_file * lr_warm_up_steps)
-    lr_idx = 0
-
     with train_logger as lg:
         lg.log_params({
             'k': k,
             'base_expert': base_expert,
             'switch_sae': switch_sae,
+            'min_k': min_k,
             'privilege_weighting': privilege_weighting,
             'n_files': n_files,
             'n_feats': n_feats,
@@ -158,10 +158,10 @@ def main(
                 loss.backward()
                 optimizer.step()
 
-                if warm_up_lrs is not None and lr_idx < len(warm_up_lrs):
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = warm_up_lrs[lr_idx] 
-                    lr_idx += 1
+
+                if hasattr(sae, 'k') and min_k is not None and sae.k > min_k:
+                    if token_count % k_step_tokens == 0:
+                        sae.k = max(sae.k - 1, min_k)
 
             if token_count % tokens_per_file == 0:
                 lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)

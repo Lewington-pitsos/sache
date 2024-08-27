@@ -143,7 +143,7 @@ class SAE(torch.nn.Module):
         }
 
     def forward(self, x):
-        recon, _ = self.forward_descriptive(x)
+        recon = self.forward_descriptive(x)
         return recon
 
 class TopKSAE(SAE):

@@ -10,9 +10,19 @@ from sache.constants import BUCKET_NAME
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None):
+    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None, log_id=None):
         self.run_name = run_name
-        self.logger_id = str(uuid4())
+
+        if log_id is not None:
+            self.log_id = log_id + '_' + str(uuid4())[:6]
+
+            if os.path.exists(self._log_filename()):
+                raise ValueError(f"Log file {self._log_filename()} already exists, please provide a unique log_id")
+        else:
+            self.log_id = str(uuid4())
+
+
+
         self.use_wandb = use_wandb
 
         if not os.path.exists(LOG_DIR):
@@ -23,7 +33,7 @@ class ProcessLogger():
         self.s3_backup_bucket = s3_backup_bucket
         if s3_backup_bucket is not None:
             assert s3_client is not None, 's3_client must be provided if s3_backup_bucket is provided'
-            self.s3_backup_path = os.path.join(LOG_DIR, self.run_name, self.logger_id + '.jsonl')
+            self.s3_backup_path = os.path.join(LOG_DIR, self.run_name, self.log_id + '.jsonl')
             self.s3_client = s3_client
 
         if use_wandb:
@@ -31,10 +41,10 @@ class ProcessLogger():
                 wandb_project = run_name
             
             self.wandb_project = wandb_project
-            wandb.init(project=wandb_project, name=self.logger_id)
+            wandb.init(project=wandb_project, name=self.log_id)
 
     def _log_filename(self):
-        return os.path.join(LOG_DIR,  self.run_name + '_' + self.logger_id + '.jsonl')
+        return os.path.join(LOG_DIR,  self.run_name + '_' + self.log_id + '.jsonl')
 
     def _log_local(self, data):
         if 'timestamp' not in data:

@@ -85,11 +85,10 @@ def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME
     
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
-        outer_cache = ShufflingWCache(cache, buffer_size=shuffling_buffer_size)
     elif cache_type == 'local_threaded':
         cache = WCache(run_name, save_every=batches_per_cache)
-        outer_cache = ThreadedWCache(ShufflingWCache(cache, buffer_size=shuffling_buffer_size))
-    elif cache_type in ['s3r', 's3r_threaded', 's3r_threaded_nonshuffling']:
+        outer_cache = ThreadedWCache(cache)
+    elif cache_type in ['s3r', 's3r_threaded', 's3_threaded_nonshuffling']:
         cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
         if cache_type == 's3':
             outer_cache = ShufflingWCache(cache, buffer_size=shuffling_buffer_size)
@@ -120,8 +119,11 @@ def generate(
         seed=42,
         log_every=100,
         num_proc=cpu_count() // 2,
-        bucket_name=BUCKET_NAME,
+        bucket_name=None,
     ):
+
+    if bucket_name is None:
+        bucket_name = BUCKET_NAME
 
     torch.manual_seed(seed)
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
@@ -148,6 +150,7 @@ def generate(
         })
 
         cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
+        local_cache = build_cache('local_threaded', batches_per_cache, run_name, bucket_name=bucket_name)
 
         dataset = chunk_and_tokenize(
             dataset, 
@@ -182,8 +185,12 @@ def generate(
 
                 lg.log_batch(activations, input_ids)
 
+                activations = activations.to('cpu')
+                cache.append(activations)
 
-                cache.append(activations.to('cpu'))
+                input_ids = input_ids.to('cpu')
+                id_activations = torch.concat([activations, input_ids.unsqueeze(2)], dim=2)
+                local_cache.append(id_activations)
 
             means /= i
             stds /= i
@@ -191,3 +198,6 @@ def generate(
         
         cache.save_mean_std(means, stds)
         cache.finalize()
+
+        local_cache.save_mean_std(means, stds)
+        local_cache.finalize()

@@ -514,17 +514,25 @@ class RBatchingCache():
         self.cache.__iter__()
         return self
 
+    def mask_acts(self, acts):
+        mask = torch.zeros((acts.shape[0], acts.shape[1], 1), dtype=acts.dtype, device=acts.device)
+        mask[:, 0, :] = 1
+        acts = torch.concat([acts, mask], dim=-1)
+        return acts[:, 1:]
+
     def __next__(self):
         if self._finished:
             self.cache.finalize()
             raise StopIteration
 
         if self.activations is None:
-            self.activations = next(self.cache).flatten(0, 1)
+            acts = next(self.cache)
+
+            self.activations = self.mask_acts(acts).flatten(0, 1)
 
         while self.activations.shape[0] < self.batch_size:
             try:
-                self.activations = torch.cat([self.activations, next(self.cache).flatten(0, 1)], dim=0)
+                self.activations = torch.cat([self.activations, self.mask_acts(next(self.cache)).flatten(0, 1)], dim=0)
             except StopIteration:
                 self._finished = True
                 if self.activations.shape[0] == 0:
@@ -535,7 +543,7 @@ class RBatchingCache():
 
         self.activations = self.activations[self.batch_size:]
 
-        return batch
+        return batch[:, :-1], batch[:, -1]
 
 def _get_metadata(activations, save_every):
     return {

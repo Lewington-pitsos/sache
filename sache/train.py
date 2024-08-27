@@ -95,7 +95,7 @@ class TrainLogger(ProcessLogger):
             },
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr, pos_mask):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
@@ -104,6 +104,9 @@ class TrainLogger(ProcessLogger):
                 'loss': loss.item(),
                 'batch_learning_rate': lr
             }
+
+            if pos_mask is not None:
+                message['pos_mask'] = pos_mask.sum().item()
 
             if latent is not None:
                 message['L0'] = (latent > 0).float().sum(-1).mean().item()

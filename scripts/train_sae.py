@@ -29,8 +29,6 @@ def main(
         l1_coefficient = 2e-3,
         privilege_weighting = 2e-1,
         lr = 3e-4,
-        min_k =None,
-        k_step_tokens = 1024,
         samples_per_file = 1024,
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
@@ -42,13 +40,8 @@ def main(
         base_expert=False,
         switch_sae=True,  
         log_id=None, 
+        pos_mask=False
     ):
-
-    if min_k is not None:
-        assert min_k > 0
-        assert min_k < k
-        assert k_step_tokens > 0
-        assert k_step_tokens % batch_size == 0
 
     if outer_batch_size < batch_size:
         outer_batch_size = batch_size
@@ -68,6 +61,7 @@ def main(
             device=device, 
             efficient=False, 
             base_expert=base_expert,
+            pos_mask=pos_mask,
         )
         dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
     else:
@@ -78,7 +72,7 @@ def main(
             'k': k,
             'base_expert': base_expert,
             'switch_sae': switch_sae,
-            'min_k': min_k,
+            'pos_mask': pos_mask,
             'privilege_weighting': privilege_weighting,
             'n_files': n_files,
             'n_feats': n_feats,
@@ -106,18 +100,21 @@ def main(
         start = None
         
         token_count = 0
-        for t in cache:
+        for t, pmask in cache:
             t = t.to(device)
+            pmask = pmask.to(device)
             for idx in range(0, t.shape[0], batch_size):
+
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
+                pos_mask = pmask[idx:idx+batch_size]
                 optimizer.zero_grad()
                 with torch.no_grad():
                     batch_mean = batch.mean(dim=-1, keepdim=True)
                     batch_std = batch.std(dim=-1, keepdim=True)
                     batch = (batch - batch_mean) / batch_std
 
-                output = sae.forward_descriptive(batch) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                output = sae.forward_descriptive(batch, pos_mask) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                 reconstruction = output['reconstruction']
 
                 if output['active_latents'] is not None:
@@ -153,15 +150,12 @@ def main(
                     dead_pct=dead_latent_pct, 
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
+                    pos_mask=pos_mask,
                 )
 
                 loss.backward()
                 optimizer.step()
 
-
-                if hasattr(sae, 'k') and min_k is not None and sae.k > min_k:
-                    if token_count % k_step_tokens == 0:
-                        sae.k = max(sae.k - 1, min_k)
 
             if token_count % tokens_per_file == 0:
                 lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)

@@ -13,9 +13,10 @@ def main(
         run_name=None, 
         bucket_name=None, 
         dataset_name='Skylion007/openwebtext', 
-        n_samples=600_000, 
-        hook_name='blocks.10.hook_resid_post', 
-        transformer_name='gpt2'
+        n_samples=10_000, 
+        hook_name='blocks.8.hook_resid_post', 
+        transformer_name='gpt2',
+        max_length=1024,
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -30,11 +31,11 @@ def main(
         batches_per_cache=128,
         dataset=dataset, 
         transformer_name=transformer_name, 
-        max_length=1024, 
+        max_length=max_length, 
         batch_size=8, 
         text_column_name='text', 
         device='cuda',
-        layer=11,
+        layer=9,
         cache_type='s3_threaded_nonshuffling',
         hook_name=hook_name,
         log_every=100,

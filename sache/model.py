@@ -53,9 +53,8 @@ class SwitchSAE(torch.nn.Module):
         for expert_id in range(self.n_experts):
             if expert_id in expert_idx:
                 expert_mask = expert_idx == expert_id # (n_to_expert,)
-                expert_input = activations[expert_mask] # (n_to_expert, d_in)
+                expert_input = activations[expert_mask] - self.pre_b # (n_to_expert, d_in)
 
-                expert_input = expert_input - self.pre_b
                 routed_enc = self.enc[expert_id] # (d_in, expert_dim)
                 routed_dec = self.dec[expert_id] # (expert_dim, d_in)
 

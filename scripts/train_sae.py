@@ -12,6 +12,7 @@ from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger
 from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE
 from sache.constants import MB, BUCKET_NAME
+from sache.log import NOOPLogger
 
 # base bs 4096
 # base lr 1e-4
@@ -42,11 +43,16 @@ def main(
         switch_sae=False,  
         log_id=None, 
     ):
+
+    if outer_batch_size < batch_size:
+        outer_batch_size = batch_size
+
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
+    # train_logger = NOOPLogger()
     if switch_sae:
         sae = TopKSwitchSAE(
             k=k, 
@@ -84,7 +90,7 @@ def main(
             'l1_coefficient': l1_coefficient,
         })
         lg.log_sae(sae)
-        optimizer = torch.optim.Adam(sae.parameters(), lr=lr, betas=(0.9, 0.99))
+        optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
 
         cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
 
@@ -97,7 +103,7 @@ def main(
             cache = RBatchingCache(cache, batch_size=outer_batch_size)
 
         overall_start = time.time()
-        start = time.time()
+        start = None
         
         token_count = 0
         for t in cache:
@@ -105,7 +111,6 @@ def main(
             for idx in range(0, t.shape[0], batch_size):
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
-
                 optimizer.zero_grad()
                 with torch.no_grad():
                     batch_mean = batch.mean(dim=-1, keepdim=True)
@@ -160,19 +165,20 @@ def main(
 
             if token_count % tokens_per_file == 0:
                 lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
-                end = time.time()
-                elapsed = end - start
-                overall_elapsed = end - overall_start
                 file = token_count // tokens_per_file
-                print(f"Time taken for file {file}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
-                lg.log({
-                    'event': 'file_processed',
-                    'time_to_process_file': elapsed, 
-                    'mb_downloaded': total_size / MB, 
-                    'mbps': total_size / MB / elapsed,
-                    'total_time_elapsed': overall_elapsed,
-                    'file': file,
-                })
+                end = time.time()
+                if start is not None:
+                    elapsed = end - start
+                    overall_elapsed = end - overall_start
+                    print(f"Time taken for file {file}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
+                    lg.log({
+                        'event': 'file_processed',
+                        'time_to_process_file': elapsed, 
+                        'mb_downloaded': total_size / MB, 
+                        'mbps': total_size / MB / elapsed,
+                        'total_time_elapsed': overall_elapsed,
+                        'file': file,
+                    })
 
                 if file >= n_files - 1:
                     break

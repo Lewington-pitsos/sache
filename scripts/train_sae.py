@@ -40,7 +40,8 @@ def main(
         base_expert=False,
         switch_sae=True,  
         log_id=None, 
-        pos_mask=False
+        pos_mask=False,
+        seq_len=1024,
     ):
 
     if outer_batch_size < batch_size:
@@ -89,32 +90,36 @@ def main(
         cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
 
         total_size = cache.metadata['bytes_per_file']
-        tokens_per_file = samples_per_file * 1024
+        tokens_per_file = samples_per_file * seq_len
 
         if shuffle:
             cache = ShufflingRCache(cache, batch_size=outer_batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
         else:
-            cache = RBatchingCache(cache, batch_size=outer_batch_size)
+            # cache = RBatchingCache(cache, batch_size=outer_batch_size)
             pass
 
         overall_start = time.time()
         start = None
         
         token_count = 0
-        for t, pmask in cache:
+        for t in cache:
             t = t.to(device)
-            pmask = pmask.to(device)
-   
-            for idx in range(0, t.shape[0], batch_size):
-
+            n_samples = batch_size // seq_len
+            for idx in range(0, t.shape[0], n_samples):
                 token_count += batch_size
-                batch = t[idx:idx+batch_size]
-                pos_mask = pmask[idx:idx+batch_size]
+
+                batch = t[idx:idx+n_samples]
+
+                pos_mask = torch.cat([torch.zeros(batch.shape[0], 1, batch.shape[2], device=device), batch[:, :-1]], dim=1).flatten(0, 1)
+                batch = batch.flatten(0, 1)
+
                 optimizer.zero_grad()
-                # with torch.no_grad():
-                #     batch_mean = batch.mean(dim=-1, keepdim=True)
-                #     batch_std = batch.std(dim=-1, keepdim=True)
-                #     batch = (batch - batch_mean) / batch_std
+                with torch.no_grad():
+                    batch_mean = batch.mean(dim=-1, keepdim=True)
+                    batch_std = batch.std(dim=-1, keepdim=True)
+                    batch = (batch - batch_mean) / batch_std
+
+                    pos_mask = (pos_mask - batch_mean) / batch_std
 
 
 

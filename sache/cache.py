@@ -515,25 +515,6 @@ class RBatchingCache():
         return self
 
     def mask_acts(self, acts):
-        acts
-
-        mask = torch.zeros((acts.shape[0], acts.shape[1], 1), dtype=acts.dtype, device=acts.device)
-        mask[:, 0, :] = 1
-        acts = torch.concat([acts, mask], dim=-1)
-
-        # acts = acts.flatten(0, 1)
-        # mean = acts.mean(dim=0, keepdim=True)
-        # std = acts.std(dim=0, keepdim=True)
-        # acts = (acts - mean) / std
-
-        # fmean = acts.mean(dim=(1), keepdim=True)
-        # fstd = acts.std(dim=(1), keepdim=True)
-        # a1 = (acts - fmean) / fstd
-
-        # pmean = a1.mean(dim=(2), keepdim=True)
-        # pstd = a1.std(dim=(2), keepdim=True)
-        # acts = (a1 - pmean) / pstd
-
         return acts
 
     def __next__(self):
@@ -559,7 +540,7 @@ class RBatchingCache():
 
         self.activations = self.activations[self.batch_size:]
 
-        return batch[:, :-1], batch[:, -1]
+        return batch, batch
 
 def _get_metadata(activations, save_every):
     return {

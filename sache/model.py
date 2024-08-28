@@ -15,12 +15,7 @@ class SwitchSAE(torch.nn.Module):
         self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
         self.pos_mask = pos_mask
 
-        if self.pos_mask:
-            self.expert_d_in = d_in
-        else:
-            self.expert_d_in = d_in
-
-        self.enc = torch.nn.Parameter(torch.randn(self.n_experts, self.expert_d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
+        self.enc = torch.nn.Parameter(torch.randn(self.n_experts, self.expert_dim, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(self.enc.mT.clone())
 
@@ -64,18 +59,15 @@ class SwitchSAE(torch.nn.Module):
                 routed_enc = self.enc[expert_id] # (d_in, expert_dim)
                 routed_dec = self.dec[expert_id] # (expert_dim, d_in)
 
-                if self.pos_mask:
-                    expert_input += pos_mask[expert_mask].unsqueeze(1) # (n_to_expert, d_in)
-
                 if self.base_expert:
                     routed_enc = torch.concat([routed_enc, self.base_enc], dim=1)
                     routed_dec = torch.concat([self.base_dec, routed_dec], dim=0)
                 
                 latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
-                latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, expert_d_in)
+                latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, expert_dim)
 
                 if self.pos_mask:
-                    reconstruction -= pos_mask[expert_mask].unsqueeze(1) # (n_to_expert, expert_d_in)
+                    reconstruction += pos_mask[expert_mask] # (n_to_expert, expert_dim)
 
                 _full_latent[expert_mask] = latent
                 _full_recons[expert_mask] = reconstruction

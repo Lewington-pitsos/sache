@@ -95,6 +95,7 @@ def main(
             cache = ShufflingRCache(cache, batch_size=outer_batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
         else:
             cache = RBatchingCache(cache, batch_size=outer_batch_size)
+            pass
 
         overall_start = time.time()
         start = None
@@ -103,16 +104,19 @@ def main(
         for t, pmask in cache:
             t = t.to(device)
             pmask = pmask.to(device)
+   
             for idx in range(0, t.shape[0], batch_size):
 
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
                 pos_mask = pmask[idx:idx+batch_size]
                 optimizer.zero_grad()
-                with torch.no_grad():
-                    batch_mean = batch.mean(dim=-1, keepdim=True)
-                    batch_std = batch.std(dim=-1, keepdim=True)
-                    batch = (batch - batch_mean) / batch_std
+                # with torch.no_grad():
+                #     batch_mean = batch.mean(dim=-1, keepdim=True)
+                #     batch_std = batch.std(dim=-1, keepdim=True)
+                #     batch = (batch - batch_mean) / batch_std
+
+
 
                 output = sae.forward_descriptive(batch, pos_mask) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                 reconstruction = output['reconstruction']

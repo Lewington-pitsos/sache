@@ -515,10 +515,26 @@ class RBatchingCache():
         return self
 
     def mask_acts(self, acts):
+        acts
+
         mask = torch.zeros((acts.shape[0], acts.shape[1], 1), dtype=acts.dtype, device=acts.device)
         mask[:, 0, :] = 1
         acts = torch.concat([acts, mask], dim=-1)
-        return acts[:, 1:]
+
+        # acts = acts.flatten(0, 1)
+        # mean = acts.mean(dim=0, keepdim=True)
+        # std = acts.std(dim=0, keepdim=True)
+        # acts = (acts - mean) / std
+
+        # fmean = acts.mean(dim=(1), keepdim=True)
+        # fstd = acts.std(dim=(1), keepdim=True)
+        # a1 = (acts - fmean) / fstd
+
+        # pmean = a1.mean(dim=(2), keepdim=True)
+        # pstd = a1.std(dim=(2), keepdim=True)
+        # acts = (a1 - pmean) / pstd
+
+        return acts
 
     def __next__(self):
         if self._finished:
@@ -528,11 +544,11 @@ class RBatchingCache():
         if self.activations is None:
             acts = next(self.cache)
 
-            self.activations = self.mask_acts(acts).flatten(0, 1)
+            self.activations = self.mask_acts(acts)
 
         while self.activations.shape[0] < self.batch_size:
             try:
-                self.activations = torch.cat([self.activations, self.mask_acts(next(self.cache)).flatten(0, 1)], dim=0)
+                self.activations = torch.cat([self.activations, self.mask_acts(next(self.cache))], dim=0)
             except StopIteration:
                 self._finished = True
                 if self.activations.shape[0] == 0:

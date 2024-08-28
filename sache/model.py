@@ -16,7 +16,7 @@ class SwitchSAE(torch.nn.Module):
         self.pos_mask = pos_mask
 
         if self.pos_mask:
-            self.expert_d_in = d_in + 1
+            self.expert_d_in = d_in
         else:
             self.expert_d_in = d_in
 
@@ -65,9 +65,7 @@ class SwitchSAE(torch.nn.Module):
                 routed_dec = self.dec[expert_id] # (expert_dim, d_in)
 
                 if self.pos_mask:
-                    routed_mask = pos_mask[expert_mask] # (n_to_expert,)
-                    expert_input = torch.concat([expert_input, routed_mask.unsqueeze(1)], dim=-1) # (n_to_expert, expert_d_in)
-
+                    expert_input += pos_mask[expert_mask].unsqueeze(1) # (n_to_expert, d_in)
 
                 if self.base_expert:
                     routed_enc = torch.concat([routed_enc, self.base_enc], dim=1)
@@ -77,7 +75,7 @@ class SwitchSAE(torch.nn.Module):
                 latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, expert_d_in)
 
                 if self.pos_mask:
-                    reconstruction = reconstruction[:, :-1]
+                    reconstruction -= pos_mask[expert_mask].unsqueeze(1) # (n_to_expert, expert_d_in)
 
                 _full_latent[expert_mask] = latent
                 _full_recons[expert_mask] = reconstruction

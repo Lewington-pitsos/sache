@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 class SwitchSAE(torch.nn.Module):
-    def __init__(self, n_features, n_experts, d_in, device, base_expert=False, pos_mask=False):
+    def __init__(self, n_features, n_experts, d_in, device, token_lookup=None, base_expert=False):
         super(SwitchSAE, self).__init__()
 
         if n_features % n_experts != 0:
@@ -13,11 +13,16 @@ class SwitchSAE(torch.nn.Module):
         self.base_expert = base_expert
         self.expert_dim = n_features // n_experts
         self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
-        self.pos_mask = pos_mask
+        if token_lookup is not None:
+            self.token_lookup = torch.nn.Parameter(token_lookup.to(device), requires_grad=True)
+            self.lookup_scale = 0.5
+        else:
+            self.token_lookup = None
+            self.lookup_scale = 0.0
 
         self.enc = torch.nn.Parameter(torch.randn(self.n_experts, self.expert_dim, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
         self.activation = torch.nn.ReLU()
-        self.dec = torch.nn.Parameter(self.enc.mT.clone())
+        self.dec = torch.nn.Parameter(self.enc.mT.clone()* (1 - self.lookup_scale)) 
 
         self.router_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
         self.router = torch.nn.Parameter(torch.randn(d_in, n_experts, device=device) / (d_in ** 0.5))
@@ -38,7 +43,7 @@ class SwitchSAE(torch.nn.Module):
     def _decode(self, latent, dec):
         return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
-    def forward_descriptive(self, activations, token_act): # activations: (batch_size, d_in)
+    def forward_descriptive(self, activations, token_ids): # activations: (batch_size, d_in)
         batch_size = activations.shape[0]
         # accumulators
         _full_recons = torch.zeros_like(activations) # (batch_size, d_in)
@@ -73,8 +78,9 @@ class SwitchSAE(torch.nn.Module):
 
         _full_recons = expert_max_prob.unsqueeze(-1) * _full_recons + self.pre_b # (batch_size, d_in)
 
-        if token_act is not None:
-            _full_recons = _full_recons + token_act
+        if token_ids is not None and self.token_lookup is not None:
+            token_acts = self.token_lookup[token_ids]
+            _full_recons = _full_recons + token_acts * self.lookup_scale
 
         return {
             'reconstruction': _full_recons, 

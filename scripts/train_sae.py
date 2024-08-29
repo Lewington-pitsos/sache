@@ -20,7 +20,7 @@ from sache.log import NOOPLogger
 def main(
         run_name = 'merciless-citadel',
         n_files = 16, # 647 is the total, 288 means just over 300,000,000 tokens
-        k = 256,
+        k = 32,
         n_feats = 24576,
         d_in = 768,
         batch_size = 4096,
@@ -54,6 +54,12 @@ def main(
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
     # train_logger = NOOPLogger()
     if switch_sae:
+        if secondary_input is not None:
+            dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post.pth')
+            token_lookup = dict[secondary_input]
+        else:
+            token_lookup = None
+
         sae = TopKSwitchSAE(
             k=k, 
             n_features=n_feats, 
@@ -61,8 +67,8 @@ def main(
             d_in=d_in, 
             device=device, 
             efficient=False, 
+            token_lookup=token_lookup,
             base_expert=base_expert,
-            pos_mask=secondary_input,
         )
         dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
     else:
@@ -101,11 +107,6 @@ def main(
         overall_start = time.time()
         start = None
 
-        if secondary_input is not None:
-            dict = torch.load('../cruft/unigrams_gpt2_blocks.10.hook_resid_post.pth')
-            token_dict = dict['secondary_input']
-
-
         token_count = 0
         for t in cache:
             t = t.to(device)
@@ -114,26 +115,21 @@ def main(
                 token_count += batch_size
 
                 batch = t[idx:idx+n_samples]
-                batch = batch[:, :, :d_in]
 
-                batch = batch.flatten(0, 1)
+                if secondary_input is not None:
+                    token_ids = batch[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
+                else:
+                    token_ids = None
+
+                batch = batch[:, :, :d_in].flatten(0, 1)
 
                 optimizer.zero_grad()
                 with torch.no_grad():
-                    batch_mean = batch.mean(dim=-1, keepdim=True)
-                    batch_std = batch.std(dim=-1, keepdim=True)
-                    batch = (batch - batch_mean) / batch_std
+                    batch_mean = batch.mean(dim=0, keepdim=True)
+                    batch_std = batch.std(dim=0, keepdim=True)
+                    batch = (batch - batch_mean) / (batch_std + 1e-6)
 
-
-                if secondary_input is not None:
-                    ids = batch[:, :, -1].long()
-                    token_act = token_dict[ids]
-                    token_act = (token_act - batch_mean) / batch_std
-                else:
-                    token_act = None
-
-
-                output = sae.forward_descriptive(batch, token_act) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                 reconstruction = output['reconstruction']
 
                 if output['active_latents'] is not None:
@@ -151,10 +147,10 @@ def main(
 
                 if output['expert_weighting'] is not None:
                     expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
-                    loss = mse + (expert_privilege * privilege_weighting)
+                    loss = scaled_mse + (expert_privilege * privilege_weighting)
                 else:
                     expert_privilege = None
-                    loss = mse
+                    loss = scaled_mse
 
                 latent = output['latent']
                 experts_chosen = output['experts_chosen']
@@ -169,7 +165,7 @@ def main(
                     dead_pct=dead_latent_pct, 
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
-                    pos_mask=secondary_input,
+                    secondary_input=None,
                 )
 
                 loss.backward()

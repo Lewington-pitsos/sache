@@ -7,7 +7,7 @@ import json
 from train_sae import main
 
 
-filename = 'cruft/posmask.json'
+filename = 'cruft/config.json'
 if __name__ == '__main__':
     with open(filename) as f:
         configs = json.load(f)

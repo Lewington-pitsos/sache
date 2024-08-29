@@ -9,6 +9,8 @@ import randomname
 
 from sache.generator import generate
 
+# python scripts/generate.py --run_name "gemma2b" --hook_name "blocks.13.hook_resid_post" --layer=14 --transformer_name "gemma-2b" 
+
 def main(
         run_name=None, 
         bucket_name=None, 
@@ -17,6 +19,7 @@ def main(
         hook_name='blocks.10.hook_resid_post', 
         transformer_name='gpt2',
         max_length=1024,
+        layer=11
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -28,14 +31,14 @@ def main(
 
     generate(
         run_name,
-        batches_per_cache=128,
+        batches_per_cache=32,
         dataset=dataset, 
         transformer_name=transformer_name, 
         max_length=max_length, 
         batch_size=8, 
         text_column_name='text', 
         device='cuda',
-        layer=11,
+        layer=layer,
         cache_type='s3_threaded_nonshuffling',
         hook_name=hook_name,
         log_every=100,

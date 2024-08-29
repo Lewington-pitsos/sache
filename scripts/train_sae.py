@@ -40,7 +40,7 @@ def main(
         base_expert=False,
         switch_sae=True,  
         log_id=None, 
-        pos_mask=False,
+        secondary_input=None,
         seq_len=1024,
     ):
 
@@ -62,7 +62,7 @@ def main(
             device=device, 
             efficient=False, 
             base_expert=base_expert,
-            pos_mask=pos_mask,
+            pos_mask=secondary_input,
         )
         dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
     else:
@@ -73,7 +73,7 @@ def main(
             'k': k,
             'base_expert': base_expert,
             'switch_sae': switch_sae,
-            'pos_mask': pos_mask,
+            'secondary_input': secondary_input,
             'privilege_weighting': privilege_weighting,
             'n_files': n_files,
             'n_feats': n_feats,
@@ -100,7 +100,12 @@ def main(
 
         overall_start = time.time()
         start = None
-        
+
+        if secondary_input is not None:
+            dict = torch.load('../cruft/unigrams_gpt2_blocks.10.hook_resid_post.pth')
+            token_dict = dict['secondary_input']
+
+
         token_count = 0
         for t in cache:
             t = t.to(device)
@@ -109,8 +114,8 @@ def main(
                 token_count += batch_size
 
                 batch = t[idx:idx+n_samples]
+                batch = batch[:, :, :d_in]
 
-                pos_mask = torch.cat([torch.zeros(batch.shape[0], 1, batch.shape[2], device=device), batch[:, :-1]], dim=1).flatten(0, 1)
                 batch = batch.flatten(0, 1)
 
                 optimizer.zero_grad()
@@ -119,11 +124,16 @@ def main(
                     batch_std = batch.std(dim=-1, keepdim=True)
                     batch = (batch - batch_mean) / batch_std
 
-                    pos_mask = (pos_mask - batch_mean) / batch_std
+
+                if secondary_input is not None:
+                    ids = batch[:, :, -1].long()
+                    token_act = token_dict[ids]
+                    token_act = (token_act - batch_mean) / batch_std
+                else:
+                    token_act = None
 
 
-
-                output = sae.forward_descriptive(batch, pos_mask) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                output = sae.forward_descriptive(batch, token_act) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                 reconstruction = output['reconstruction']
 
                 if output['active_latents'] is not None:
@@ -159,7 +169,7 @@ def main(
                     dead_pct=dead_latent_pct, 
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
-                    pos_mask=pos_mask,
+                    pos_mask=secondary_input,
                 )
 
                 loss.backward()

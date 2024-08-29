@@ -150,7 +150,6 @@ def generate(
         })
 
         cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
-        local_cache = build_cache('local_threaded', batches_per_cache, run_name, bucket_name=bucket_name)
 
         dataset = chunk_and_tokenize(
             dataset, 
@@ -186,11 +185,8 @@ def generate(
                 lg.log_batch(activations, input_ids)
 
                 activations = activations.to('cpu')
-                cache.append(activations)
-
-                input_ids = input_ids.to('cpu')
-                id_activations = torch.concat([activations, input_ids.unsqueeze(2)], dim=2)
-                local_cache.append(id_activations)
+                acts_and_ids = torch.concat([activations, input_ids.unsqueeze(2).to('cpu')], dim=2)
+                cache.append(acts_and_ids)
 
             means /= i
             stds /= i
@@ -198,6 +194,3 @@ def generate(
         
         cache.save_mean_std(means, stds)
         cache.finalize()
-
-        local_cache.save_mean_std(means, stds)
-        local_cache.finalize()

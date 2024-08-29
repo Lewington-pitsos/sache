@@ -540,7 +540,7 @@ class RBatchingCache():
 
         self.activations = self.activations[self.batch_size:]
 
-        return batch, batch
+        return batch
 
 def _get_metadata(activations, save_every):
     return {

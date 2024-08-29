@@ -38,7 +38,7 @@ class SwitchSAE(torch.nn.Module):
     def _decode(self, latent, dec):
         return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
-    def forward_descriptive(self, activations, pos_mask): # activations: (batch_size, d_in)
+    def forward_descriptive(self, activations, token_act): # activations: (batch_size, d_in)
         batch_size = activations.shape[0]
         # accumulators
         _full_recons = torch.zeros_like(activations) # (batch_size, d_in)
@@ -66,15 +66,15 @@ class SwitchSAE(torch.nn.Module):
                 latent = self._encode(expert_input @ routed_enc) # (n_to_expert, expert_dim)
                 latent, reconstruction = self._decode(latent, routed_dec) # (n_to_expert, expert_dim), (n_to_expert, expert_dim)
 
-                if self.pos_mask:
-                    reconstruction += pos_mask[expert_mask] # (n_to_expert, expert_dim)
-
                 _full_latent[expert_mask] = latent
                 _full_recons[expert_mask] = reconstruction
                 with torch.no_grad():
                     _was_active[expert_id] = torch.max(latent, dim=0).values > 1e-3
 
         _full_recons = expert_max_prob.unsqueeze(-1) * _full_recons + self.pre_b # (batch_size, d_in)
+
+        if token_act is not None:
+            _full_recons = _full_recons + token_act
 
         return {
             'reconstruction': _full_recons, 

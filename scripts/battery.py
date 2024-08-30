@@ -7,11 +7,22 @@ import json
 from train_sae import main
 
 
-filename = 'cruft/config.json'
-if __name__ == '__main__':
-    with open(filename) as f:
-        configs = json.load(f)
+configs = [
 
+    {
+        "log_id": "[<bos>, t]",
+        "run_name": "relaxed-cyclist",
+        "n_feats": 16384,
+        "n_experts": 32,
+        "batch_size": 65536,
+        "lr": 0.0008,
+        "secondary_input": "[<bos>, t]",
+        "wandb_project": "tokenized-sae",
+        "shuffle": False
+    }
+]
+
+if __name__ == '__main__':
     print(f'running {len(configs)} configs')
 
     for config in configs:

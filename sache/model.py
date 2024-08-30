@@ -20,7 +20,7 @@ class SwitchSAE(torch.nn.Module):
             self.token_lookup = None
             self.lookup_scale = 0.0
 
-        self.enc = torch.nn.Parameter(torch.randn(self.n_experts, self.expert_dim, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
+        self.enc = torch.nn.Parameter(torch.randn(self.n_experts, d_in, self.expert_dim, device=device) / (2**0.5) / (d_in ** 0.5))
         self.activation = torch.nn.ReLU()
         self.dec = torch.nn.Parameter(self.enc.mT.clone()* (1 - self.lookup_scale)) 
 

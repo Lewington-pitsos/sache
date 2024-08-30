@@ -19,7 +19,7 @@ from sache.log import NOOPLogger
 
 def main(
         run_name = 'merciless-citadel',
-        n_files = 16, # 647 is the total, 288 means just over 300,000,000 tokens
+        n_files = 32, # 647 is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
@@ -55,7 +55,7 @@ def main(
     # train_logger = NOOPLogger()
     if switch_sae:
         if secondary_input is not None:
-            dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post.pth')
+            dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = dict[secondary_input]
         else:
             token_lookup = None

@@ -142,10 +142,12 @@ def main(
                 else:
                     dead_latent_pct = None
 
-                mse = ((batch - reconstruction) ** 2).mean()
+                delta = (batch - reconstruction) ** 2
+                sample_mse = delta.mean(dim=1)
+                position_mse = sample_mse.reshape(n_samples, seq_len).mean(dim=0)
+                mse = (delta).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()
                 scaled_mse = mse / mean_pred_mse    
-
 
                 if output['expert_weighting'] is not None:
                     expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
@@ -168,6 +170,7 @@ def main(
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
                     secondary_input=None,
+                    position_mse=position_mse,
                 )
 
                 loss.backward()

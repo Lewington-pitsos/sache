@@ -37,7 +37,6 @@ def main(
         data_bucket=BUCKET_NAME,
         shuffle=True,
         wandb_project=None,
-        base_expert=False,
         switch_sae=True,  
         log_id=None, 
         secondary_input=None,
@@ -68,7 +67,6 @@ def main(
             device=device, 
             efficient=False, 
             token_lookup=token_lookup,
-            base_expert=base_expert,
         )
         dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
     else:
@@ -77,7 +75,6 @@ def main(
     with train_logger as lg:
         lg.log_params({
             'k': k,
-            'base_expert': base_expert,
             'switch_sae': switch_sae,
             'secondary_input': secondary_input,
             'privilege_weighting': privilege_weighting,

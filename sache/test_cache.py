@@ -78,7 +78,7 @@ def test_batched_cache(s3_client):
     s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
 
     inner_cache = S3RCache(s3_client, s3_prefix)
-    cache = RBatchingCache(inner_cache, metadata['sequence_length'] * 2)
+    cache = RBatchingCache(inner_cache, 2)
     
     activations = torch.rand(32, 16, 9)
 

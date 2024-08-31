@@ -86,23 +86,23 @@ def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
     elif cache_type == 'local_threaded':
-        cache = WCache(run_name, save_every=batches_per_cache)
-        outer_cache = ThreadedWCache(cache)
+        inner_cache = WCache(run_name, save_every=batches_per_cache)
+        cache = ThreadedWCache(inner_cache)
     elif cache_type in ['s3r', 's3r_threaded', 's3_threaded_nonshuffling']:
-        cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
+        inner_cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
         if cache_type == 's3':
-            outer_cache = ShufflingWCache(cache, buffer_size=shuffling_buffer_size)
+            cache = ShufflingWCache(inner_cache, buffer_size=shuffling_buffer_size)
         elif cache_type == 's3_threaded':
-            outer_cache = ThreadedWCache(ShufflingWCache(cache, buffer_size=shuffling_buffer_size))
+            cache = ThreadedWCache(ShufflingWCache(inner_cache, buffer_size=shuffling_buffer_size))
         elif cache_type == 's3_threaded_nonshuffling':
-            outer_cache = ThreadedWCache(cache)
+            cache = ThreadedWCache(inner_cache)
     elif cache_type == 'noop':
-        outer_cache = NoopCache()
+        cache = NoopCache()
     else:
         raise ValueError(f"unexpected cache type {cache_type}")
 
     
-    return outer_cache
+    return cache
 
 def generate(
         run_name, 

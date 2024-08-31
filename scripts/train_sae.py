@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger
-from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE
+from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 from sache.log import NOOPLogger
 
@@ -51,23 +51,28 @@ def main(
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
-    # train_logger = NOOPLogger()
     if switch_sae:
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = dict[secondary_input]
+            sae = LookupSwitchSAE(
+                token_lookup=token_lookup, 
+                k=k, 
+                n_features=n_feats, 
+                n_experts=n_experts, 
+                d_in=d_in, 
+                device=device, 
+                efficient=False
+            )
         else:
-            token_lookup = None
-
-        sae = TopKSwitchSAE(
-            k=k, 
-            n_features=n_feats, 
-            n_experts=n_experts, 
-            d_in=d_in, 
-            device=device, 
-            efficient=False, 
-            token_lookup=token_lookup,
-        )
+            sae = TopKSwitchSAE(
+                k=k, 
+                n_features=n_feats, 
+                n_experts=n_experts, 
+                d_in=d_in, 
+                device=device, 
+                efficient=False, 
+            )
         dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
     else:
         sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)

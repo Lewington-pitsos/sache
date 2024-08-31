@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger
-from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupSwitchSAE
+from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupTopkSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 from sache.log import NOOPLogger
 
@@ -55,7 +55,7 @@ def main(
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = dict[secondary_input]
-            sae = LookupSwitchSAE(
+            sae = LookupTopkSwitchSAE(
                 token_lookup=token_lookup, 
                 k=k, 
                 n_features=n_feats, 

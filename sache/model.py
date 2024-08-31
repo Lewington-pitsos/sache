@@ -75,27 +75,6 @@ def eagre_decode(topk, dec):
 
     return latent, latent @ dec
 
-class LookupSwitchSAE(SwitchSAE):
-    def __init__(self, token_lookup, device, *args, lookup_scale=0.5, **kwargs):
-        super(LookupSwitchSAE, self).__init__(*args, device=device, **kwargs)
-
-
-        self.token_lookup = torch.nn.Parameter(token_lookup.to(device), requires_grad=True)
-        self.lookup_scale = lookup_scale
-
-        with torch.no_grad():
-            self.dec = self.dec * (1 - self.lookup_scale)
-
-    def forward_descriptive(self, activations, token_ids):
-        output = super().forward_descriptive(activations, token_ids)
-
-        if token_ids is not None:
-            token_acts = self.token_lookup[token_ids]
-            output['reconstruction'] = output['reconstruction'] + token_acts * self.lookup_scale
-
-        return output
-
-
 class TopKSwitchSAE(SwitchSAE):
     def __init__(self, k, *args, efficient=False, **kwargs):
         super(TopKSwitchSAE, self).__init__(*args, **kwargs)
@@ -115,6 +94,26 @@ class TopKSwitchSAE(SwitchSAE):
     def _eagre_decode(self, latent_info, dec):
         topk, pre_activation = latent_info
         return eagre_decode(topk, dec)
+
+class LookupTopkSwitchSAE(TopKSwitchSAE):
+    def __init__(self, token_lookup, device, *args, lookup_scale=0.5, **kwargs):
+        super(LookupTopkSwitchSAE, self).__init__(*args, device=device, **kwargs)
+
+        self.token_lookup = torch.nn.Parameter(token_lookup.to(device), requires_grad=True)
+        self.lookup_scale = lookup_scale
+
+        with torch.no_grad():
+            self.dec = self.dec * (1 - self.lookup_scale)
+
+    def forward_descriptive(self, activations, token_ids):
+        output = super().forward_descriptive(activations, token_ids)
+
+        if token_ids is not None:
+            token_acts = self.token_lookup[token_ids]
+            output['reconstruction'] = output['reconstruction'] + token_acts * self.lookup_scale
+
+        return output
+
 
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):

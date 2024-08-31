@@ -26,7 +26,7 @@ class SwitchSAE(torch.nn.Module):
     def _decode(self, latent, dec):
         return latent, latent @ dec # (n_to_expert, expert_dim), (n_to_expert, d_in)
 
-    def forward_descriptive(self, activations, token_ids): # activations: (batch_size, d_in)
+    def forward_descriptive(self, activations): # activations: (batch_size, d_in)
         batch_size = activations.shape[0]
         # accumulators
         _full_recons = torch.zeros_like(activations) # (batch_size, d_in)
@@ -106,7 +106,7 @@ class LookupTopkSwitchSAE(TopKSwitchSAE):
             self.dec = self.dec * (1 - self.lookup_scale)
 
     def forward_descriptive(self, activations, token_ids):
-        output = super().forward_descriptive(activations, token_ids)
+        output = super().forward_descriptive(activations)
 
         if token_ids is not None:
             token_acts = self.token_lookup[token_ids]

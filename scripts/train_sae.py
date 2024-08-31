@@ -73,7 +73,7 @@ def main(
                 device=device, 
                 efficient=False, 
             )
-        dead_latents = torch.zeros(n_experts, sae.latent_dim, device=device, requires_grad=False)
+        dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
         sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
 
@@ -109,21 +109,23 @@ def main(
         overall_start = time.time()
         start = None
 
+        current_file = 0
         token_count = 0
         for t in cache:
-            t = t.to(device)
-            n_samples = batch_size // seq_len
-            for idx in range(0, t.shape[0], n_samples):
+            t = t.to(device)  # (n_samples, seq_len, d_in)
+
+            t = t[:, 25:] # (n_samples, seq_len - 1, d_in)
+
+            if secondary_input is not None:
+                token_ids = t[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
+            else:
+                token_ids = None
+
+            t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
+
+            for idx in range(0, t.shape[0], batch_size):
                 token_count += batch_size
-
-                batch = t[idx:idx+n_samples]
-
-                if secondary_input is not None:
-                    token_ids = batch[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
-                else:
-                    token_ids = None
-
-                batch = batch[:, :, :d_in].flatten(0, 1)
+                batch = t[idx:idx+batch_size]
 
                 optimizer.zero_grad()
                 with torch.no_grad():
@@ -131,7 +133,11 @@ def main(
                     batch_std = batch.std(dim=0, keepdim=True)
                     batch = (batch - batch_mean) / (batch_std + 1e-6)
 
-                output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                if secondary_input is not None:
+                    output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                else:
+                    output = sae.forward_descriptive(batch)
+                    
                 reconstruction = output['reconstruction']
 
                 if output['active_latents'] is not None:
@@ -144,7 +150,7 @@ def main(
 
                 delta = (batch - reconstruction) ** 2
                 sample_mse = delta.mean(dim=1)
-                position_mse = sample_mse.reshape(n_samples, seq_len).mean(dim=0)
+                position_mse = sample_mse.reshape(-1, seq_len - 25).mean(dim=0)
                 mse = (delta).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()
                 scaled_mse = mse / mean_pred_mse    
@@ -176,10 +182,10 @@ def main(
                 loss.backward()
                 optimizer.step()
 
-
-            if token_count % tokens_per_file == 0:
+            file = token_count // tokens_per_file
+            if file > current_file:
+                current_file = file
                 lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
-                file = token_count // tokens_per_file
                 end = time.time()
                 if start is not None:
                     elapsed = end - start

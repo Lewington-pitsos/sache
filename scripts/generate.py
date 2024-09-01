@@ -19,7 +19,8 @@ def main(
         hook_name='blocks.10.hook_resid_post', 
         transformer_name='gpt2',
         max_length=1024,
-        layer=11
+        layer=11,
+        batch_size=8
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -35,7 +36,7 @@ def main(
         dataset=dataset, 
         transformer_name=transformer_name, 
         max_length=max_length, 
-        batch_size=8, 
+        batch_size=batch_size, 
         text_column_name='text', 
         device='cuda',
         layer=layer,

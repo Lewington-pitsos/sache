@@ -115,6 +115,7 @@ def main(
         for t in cache:
             t = t.to(device)  # (n_samples, seq_len, d_in)
             t = t[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
+            positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
 
             if secondary_input is not None:
                 token_ids = t[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
@@ -126,6 +127,7 @@ def main(
             for idx in range(0, t.shape[0], batch_size):
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
+                batch_positions = positions[idx:idx+batch_size]
 
                 optimizer.zero_grad()
                 with torch.no_grad():
@@ -150,8 +152,14 @@ def main(
 
                 delta = (batch - reconstruction) ** 2
                 
-                sample_mse = delta.mean(dim=1)
-                position_mse = sample_mse.reshape(-1, seq_len - skip_first_n).mean(dim=0)
+                with torch.no_grad():
+                    sample_mse = delta.mean(dim=1)
+                    if skip_first_n > 0:
+                        mse_sum = torch.bincount(batch_positions, weights=sample_mse.mean(dim=1))
+                        position_counts = torch.bincount(batch_positions)
+                        position_mse = mse_sum / torch.clamp(position_counts, min=1)
+                    else:
+                        position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
                 mse = (delta).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()

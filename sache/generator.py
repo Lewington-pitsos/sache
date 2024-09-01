@@ -1,6 +1,7 @@
 import threading
 import psutil
 import json
+import os
 import time
 import torch
 from sae_lens import HookedSAETransformer
@@ -122,6 +123,12 @@ def generate(
         bucket_name=None,
     ):
 
+    with open('.credentials.json') as f:
+        creds = json.load(f)
+
+    os.environ['HF_TOKEN'] = creds['HF_TOKEN']
+
+
     if bucket_name is None:
         bucket_name = BUCKET_NAME
 
@@ -132,6 +139,8 @@ def generate(
         logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)
     else:
         logger = NOOPLogger()
+
+    
 
     with logger as lg:
         lg.log({

@@ -19,7 +19,7 @@ from sache.log import NOOPLogger
 
 def main(
         run_name = 'merciless-citadel',
-        n_files = 32, # 647 is the total, 288 means just over 300,000,000 tokens
+        n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
@@ -41,6 +41,7 @@ def main(
         log_id=None, 
         secondary_input=None,
         seq_len=1024,
+        skip_first_n=0,
     ):
 
     if outer_batch_size < batch_size:
@@ -83,7 +84,7 @@ def main(
             'switch_sae': switch_sae,
             'secondary_input': secondary_input,
             'privilege_weighting': privilege_weighting,
-            'n_files': n_files,
+            'n_tokens': n_tokens,
             'n_feats': n_feats,
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
@@ -113,8 +114,7 @@ def main(
         token_count = 0
         for t in cache:
             t = t.to(device)  # (n_samples, seq_len, d_in)
-
-            t = t[:, 25:] # (n_samples, seq_len - 1, d_in)
+            t = t[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
 
             if secondary_input is not None:
                 token_ids = t[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
@@ -149,8 +149,10 @@ def main(
                     dead_latent_pct = None
 
                 delta = (batch - reconstruction) ** 2
+                
                 sample_mse = delta.mean(dim=1)
-                position_mse = sample_mse.reshape(-1, seq_len - 25).mean(dim=0)
+                position_mse = sample_mse.reshape(-1, seq_len - skip_first_n).mean(dim=0)
+
                 mse = (delta).mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()
                 scaled_mse = mse / mean_pred_mse    
@@ -182,6 +184,11 @@ def main(
                 loss.backward()
                 optimizer.step()
 
+                if token_count >= n_tokens:
+                    overall_end = time.time()
+                    print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
+                    return
+
             file = token_count // tokens_per_file
             if file > current_file:
                 current_file = file
@@ -200,14 +207,7 @@ def main(
                         'file': file,
                     })
 
-                if file >= n_files - 1:
-                    break
-
                 start = time.time()
-
-    overall_end = time.time()
-    print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
-    print(f"Overall MB per second: {round(total_size / MB * n_files) / (overall_end - overall_start):.2f}")
 
 if __name__ == "__main__":
     fire.Fire(main)

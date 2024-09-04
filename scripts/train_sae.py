@@ -42,6 +42,8 @@ def main(
         secondary_input=None,
         seq_len=1024,
         skip_first_n=0,
+        batch_norm=True,
+        filter_ma=False
     ):
 
     if outer_batch_size < batch_size:
@@ -82,10 +84,13 @@ def main(
         lg.log_params({
             'k': k,
             'switch_sae': switch_sae,
+            'skip_first_n': skip_first_n,
+            'batch_norm': batch_norm,
             'secondary_input': secondary_input,
             'privilege_weighting': privilege_weighting,
             'n_tokens': n_tokens,
             'n_feats': n_feats,
+            'filter_ma': filter_ma,
             'n_experts': n_experts,
             'samples_per_file': samples_per_file,
             'inner_bs': batch_size,
@@ -115,7 +120,7 @@ def main(
         for t in cache:
             t = t.to(device)  # (n_samples, seq_len, d_in)
             t = t[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
-            positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+            is_ma = t.max(dim=-1).values > 1e3
 
             if secondary_input is not None:
                 token_ids = t[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
@@ -124,16 +129,25 @@ def main(
 
             t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
 
+            # filter out all ma tokens
+            if filter_ma:
+                flat_ma = is_ma.flatten(0, 1)
+                t = t[~flat_ma]
+
+            positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+
+
             for idx in range(0, (t.shape[0] // batch_size) * batch_size, batch_size):
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
                 batch_positions = positions[idx:idx+batch_size]
 
                 optimizer.zero_grad()
-                with torch.no_grad():
-                    batch_mean = batch.mean(dim=0, keepdim=True)
-                    batch_std = batch.std(dim=0, keepdim=True)
-                    batch = (batch - batch_mean) / (batch_std + 1e-6)
+                if batch_norm:
+                    with torch.no_grad():
+                        batch_mean = batch.mean(dim=0, keepdim=True)
+                        batch_std = batch.std(dim=0, keepdim=True)
+                        batch = (batch - batch_mean) / (batch_std + 1e-6)
 
                 if secondary_input is not None:
                     output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
@@ -187,6 +201,7 @@ def main(
                     lr=optimizer.param_groups[-1]['lr'],
                     secondary_input=None,
                     position_mse=position_mse,
+                    massive_activations=is_ma.to_sparse().indices()
                 )
 
                 loss.backward()

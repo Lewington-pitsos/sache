@@ -95,7 +95,7 @@ class TrainLogger(ProcessLogger):
             },
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr, secondary_input, position_mse):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr, secondary_input, position_mse, massive_activations):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
@@ -104,6 +104,9 @@ class TrainLogger(ProcessLogger):
                 'loss': loss.item(),
                 'batch_learning_rate': lr
             }
+
+            if massive_activations is not None:
+                message['massive_activations'] = massive_activations.cpu().numpy().tolist()
 
             if position_mse is not None:
                 message['position_mse'] = position_mse.cpu().numpy().tolist()

@@ -124,7 +124,7 @@ def main(
 
             t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
 
-            for idx in range(0, t.shape[0], batch_size):
+            for idx in range(0, (t.shape[0] // batch_size) * batch_size, batch_size):
                 token_count += batch_size
                 batch = t[idx:idx+batch_size]
                 batch_positions = positions[idx:idx+batch_size]

@@ -110,7 +110,7 @@ def main(
         overall_start = time.time()
         start = None
 
-        current_file = 0
+        current_files_worth = 0
         token_count = 0
         for t in cache:
             t = t.to(device)  # (n_samples, seq_len, d_in)
@@ -155,7 +155,7 @@ def main(
                 with torch.no_grad():
                     sample_mse = delta.mean(dim=1)
                     if skip_first_n > 0:
-                        mse_sum = torch.bincount(batch_positions, weights=sample_mse.mean(dim=1))
+                        mse_sum = torch.bincount(batch_positions, weights=sample_mse)
                         position_counts = torch.bincount(batch_positions)
                         position_mse = mse_sum / torch.clamp(position_counts, min=1)
                     else:
@@ -197,22 +197,22 @@ def main(
                     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
                     return
 
-            file = token_count // tokens_per_file
-            if file > current_file:
-                current_file = file
+            files_worth = token_count // tokens_per_file
+            if files_worth > current_files_worth:
+                current_files_worth = files_worth
                 lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
                 end = time.time()
                 if start is not None:
                     elapsed = end - start
                     overall_elapsed = end - overall_start
-                    print(f"Time taken for file {file}: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
+                    print(f"Time taken for {files_worth} files worth of activations: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
                     lg.log({
                         'event': 'file_processed',
                         'time_to_process_file': elapsed, 
                         'mb_downloaded': total_size / MB, 
                         'mbps': total_size / MB / elapsed,
                         'total_time_elapsed': overall_elapsed,
-                        'file': file,
+                        'file': files_worth,
                     })
 
                 start = time.time()

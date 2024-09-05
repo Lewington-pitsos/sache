@@ -9,7 +9,7 @@ import randomname
 
 from sache.generator import generate
 
-# python scripts/generate.py --run_name "gemma2b" --hook_name "blocks.13.hook_resid_post" --layer=14 --transformer_name "gemma-2b" 
+# python scripts/generate.py --run_name "gemma2b" --hook_name "blocks.13.hook_resid_post" --layer=14 --transformer_name "gemma-2b" --batch_size=4 
 
 def main(
         run_name=None, 

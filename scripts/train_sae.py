@@ -54,6 +54,7 @@ def main(
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
+    # train_logger = NOOPLogger()
     if switch_sae:
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
@@ -127,15 +128,12 @@ def main(
             else:
                 token_ids = None
 
-            t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
-
-            # filter out all ma tokens
             positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+            t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
             if filter_ma:
                 flat_ma = is_ma.flatten(0, 1)
                 t = t[~flat_ma]
                 positions = positions[~flat_ma]
-
 
             for idx in range(0, (t.shape[0] // batch_size) * batch_size, batch_size):
                 token_count += batch_size
@@ -168,7 +166,7 @@ def main(
                 
                 with torch.no_grad():
                     sample_mse = delta.mean(dim=1)
-                    if skip_first_n > 0:
+                    if skip_first_n > 0 or filter_ma:
                         mse_sum = torch.bincount(batch_positions, weights=sample_mse)
                         position_counts = torch.bincount(batch_positions)
                         position_mse = mse_sum / torch.clamp(position_counts, min=1)

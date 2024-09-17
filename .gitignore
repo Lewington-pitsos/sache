@@ -19,4 +19,5 @@ pad.ipynb
 .credentials.json
 
 wandb
-laion
+laion/*
+!laion/.gitignore

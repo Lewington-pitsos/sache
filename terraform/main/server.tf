@@ -38,6 +38,9 @@ resource "aws_instance" "sache" {
   }
 
   root_block_device {
-    volume_size = 400
+    volume_size           = 5000
+    volume_type           = "gp3"      
+    iops                  = 6000       
+    throughput            = 500     
   }
 }

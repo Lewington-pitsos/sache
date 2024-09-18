@@ -44,7 +44,6 @@ class GenerationLogger(ProcessLogger):
     def log_batch(self, activations,  input_ids=None):
         self.n += 1
         if self.n % self.log_every == 0:
-            sequence_length = activations.shape[1]
             batch_size = activations.shape[0]
 
             sample_sequence_act = activations[0]
@@ -71,10 +70,19 @@ class GenerationLogger(ProcessLogger):
                 self.start_time = time.time()
             else:
                 current_time = time.time()
+
+                if len(activations.shape) == 3:
+                    sequence_length = activations.shape[1]
+                    n_tokens = self.log_every * batch_size * sequence_length
+                elif len(activations.shape) == 2:
+                    n_tokens = self.log_every * batch_size
+                else:
+                    raise ValueError(f"tried to log unexpected activations shape {activations.shape}")
+
                 elapsed = current_time - self.start_time
                 self.start_time = current_time
                 log_data['seconds_since_last_log'] = elapsed
-                log_data['tokens_per_second'] = self.log_every * batch_size * sequence_length  / elapsed    
+                log_data['tokens_per_second'] = n_tokens  / elapsed    
 
             self.log(log_data)
 
@@ -187,8 +195,8 @@ def generate(
                 activations = activations[hook_name]
 
                 if means is None:
-                    means = activations.mean(dim=(0, 1)).detach().clone().to('cpu')
-                    stds = activations.std(dim=(0, 1)).detach().clone().to('cpu')
+                    means = activations.mean(dim=(0, 1)).to('cpu')
+                    stds = activations.std(dim=(0, 1)).to('cpu')
                 else:
                     means += activations.mean(dim=(0, 1)).to('cpu')
                     stds += activations.std(dim=(0, 1)).to('cpu')
@@ -206,24 +214,19 @@ def generate(
         cache.save_mean_std(means, stds)
         cache.finalize()
 
-
-
-
 def vit_generate(
         run_name, 
         batches_per_cache,
         dataset, 
         transformer_name, 
-        max_length, 
         batch_size, 
-        text_column_name, 
         device,
         layer,
         hook_name,
         cache_type,
+        n_samples=None,
         seed=42,
         log_every=100,
-        num_proc=cpu_count() // 2,
         bucket_name=None,
     ):
 
@@ -236,13 +239,12 @@ def vit_generate(
         bucket_name = BUCKET_NAME
 
     torch.manual_seed(seed)
-    transformer = SpecifiedHookedViT(transformer_name, device=device)
+    transformer = SpecifiedHookedViT(layer, hook_name, transformer_name, device=device)
 
     if log_every is not None:
         logger = GenerationLogger(run_name, None, log_every=log_every)
     else:
         logger = NOOPLogger()
-    
 
     with logger as lg:
         lg.log({
@@ -250,9 +252,7 @@ def vit_generate(
             'run_name': run_name,
             'bs_per_cache': batches_per_cache,
             'transformer_name': transformer_name,
-            'max_length': max_length,
             'batch_size': batch_size,
-            'text_column_name': text_column_name,
             'device': device,
             'layer': layer,
             'hook_name': hook_name,
@@ -261,19 +261,20 @@ def vit_generate(
         })
 
         cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
         
         transformer.eval()
         means = None
         stds = None
+
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
 
                 activations = transformer.get_activations(batch)
 
                 if means is None:
-                    means = activations.mean(dim=0).detach().clone().to('cpu')
-                    stds = activations.std(dim=0).detach().clone().to('cpu')
+                    means = activations.mean(dim=0).to('cpu')
+                    stds = activations.std(dim=0).to('cpu')
                 else:
                     means += activations.mean(dim=0).to('cpu')
                     stds += activations.std(dim=0).to('cpu')
@@ -282,8 +283,12 @@ def vit_generate(
 
                 cache.append(activations.to('cpu'))
 
+                if n_samples is not None and i * batch_size >= n_samples:
+                    break
+
             means /= i
             stds /= i
+
         
         cache.save_mean_std(means, stds)
         cache.finalize()

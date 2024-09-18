@@ -98,12 +98,12 @@ class S3WCache():
         else:
             if activations.shape[0] != self.metadata['batch_size']:
                 print(f'Warning: batch size mismatch. Expected {self.metadata["batch_size"]}, got {activations.shape}')
-            if activations.shape[1] != self.metadata['sequence_length']:
-                print(f'Warning: sequence length mismatch. Expected {self.metadata["sequence_length"]}, got {activations.shape}')
-            if activations.shape[2] != self.metadata['d_in']:
+            if activations.shape[-1] != self.metadata['d_in']:
                 print(f'Warning: input dimension mismatch. Expected {self.metadata["d_in"]}, got {activations.shape}')
             if str(activations.dtype) != self.metadata['dtype']:
                 print(f'Warning: dtype mismatch. Expected {self.metadata["dtype"]}, got {activations.dtype}')
+            if len(activations.shape) == 3 and activations.shape[1] != self.metadata['sequence_length']:
+                print(f'Warning: sequence length mismatch. Expected {self.metadata["sequence_length"]}, got {activations.shape}')
 
         self._in_mem.append(activations)
 
@@ -543,15 +543,23 @@ class RBatchingCache():
         return batch
 
 def _get_metadata(activations, save_every):
-    return {
+    metadata = {
         'batch_size': activations.shape[0],
-        'sequence_length': activations.shape[1],
         'dtype': str(activations.dtype),
-        'd_in': activations.shape[2],
         'bytes_per_file': activations.element_size() * activations.numel() * save_every,
         'batches_per_file': save_every,
         'shape': (activations.shape[0] * save_every, *activations.shape[1:])
     }
+
+    if len(activations.shape) == 3:
+        metadata['sequence_length'] = activations.shape[1]
+        metadata['d_in'] = activations.shape[2]
+    elif len(activations.shape) == 2:
+        metadata['d_in'] = activations.shape[1]
+    else:
+        raise ValueError(f"tried to save unexpected activations shape in metadata {activations.shape}")
+
+    return metadata
 
 class WCache():
     def __init__(self, run_name, save_every=1, base_dir=OUTER_CACHE_DIR):

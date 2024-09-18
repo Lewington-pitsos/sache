@@ -1,7 +1,7 @@
 import os
 from torch.utils.data import IterableDataset, DataLoader
 from torchvision import transforms
-from torchvision.io import read_image
+from torchvision.io import read_image, ImageReadMode
 
 class FileDataset(IterableDataset):
     def __init__(self, root_dir):
@@ -18,7 +18,7 @@ class FileDataset(IterableDataset):
 
     def __iter__(self):
         for img_path in self._get_image_paths():
-            yield read_image(img_path)
+            yield read_image(img_path, mode=ImageReadMode.RGB)
 
 if __name__ == "__main__":
     data_directory = 'images'

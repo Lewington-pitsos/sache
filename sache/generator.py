@@ -265,7 +265,7 @@ def vit_generate(
         })
 
         cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
         
         transformer.eval()
         means = None
@@ -273,7 +273,6 @@ def vit_generate(
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
-
                 activations = transformer.get_activations(batch)
 
                 if means is None:
@@ -289,11 +288,14 @@ def vit_generate(
 
                 if n_samples is not None and i * batch_size >= n_samples:
                     break
+                
+                if i % 100 == 0:
+                    save_mean = means / i
+                    save_std = stds / i
+                    cache.save_mean_std(save_mean, save_std)
 
             means /= i
             stds /= i
-
         
         cache.save_mean_std(means, stds)
         cache.finalize()
-

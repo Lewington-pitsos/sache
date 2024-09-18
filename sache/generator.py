@@ -8,12 +8,12 @@ from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 from multiprocessing import cpu_count
 
-
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
 from sache.constants import BUCKET_NAME
+from sache.hookedvit import SpecifiedHookedViT
 
 class GenerationLogger(ProcessLogger):
     def __init__(self, run_name, tokenizer, log_every=100):
@@ -41,7 +41,7 @@ class GenerationLogger(ProcessLogger):
             })
             time.sleep(30)
 
-    def log_batch(self, activations,  input_ids):
+    def log_batch(self, activations,  input_ids=None):
         self.n += 1
         if self.n % self.log_every == 0:
             sequence_length = activations.shape[1]
@@ -61,9 +61,11 @@ class GenerationLogger(ProcessLogger):
                 'sample_mean_activations': torch.mean(sample_sequence_act[:, self.sample_activations:], dim=0).tolist(),
                 'sample_max_activations': torch.max(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
                 'sample_min_activations': torch.min(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
-                
-                'sample_plaintext': self.tokenizer.decode(input_ids[0][:self.sample_activations]),
             }
+
+            if input_ids is not None:
+                assert self.tokenizer is not None
+                log_data['sample_plaintext'] = self.tokenizer.decode(input_ids[0][:self.sample_activations])
 
             if self.start_time is None:
                 self.start_time = time.time()
@@ -167,7 +169,7 @@ def generate(
             max_seq_len=max_length,
             num_proc=num_proc
         )
-
+        
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
         
         transformer.eval()
@@ -203,3 +205,86 @@ def generate(
         
         cache.save_mean_std(means, stds)
         cache.finalize()
+
+
+
+
+def vit_generate(
+        run_name, 
+        batches_per_cache,
+        dataset, 
+        transformer_name, 
+        max_length, 
+        batch_size, 
+        text_column_name, 
+        device,
+        layer,
+        hook_name,
+        cache_type,
+        seed=42,
+        log_every=100,
+        num_proc=cpu_count() // 2,
+        bucket_name=None,
+    ):
+
+    with open('.credentials.json') as f:
+        creds = json.load(f)
+
+    os.environ['HF_TOKEN'] = creds['HF_TOKEN']
+
+    if bucket_name is None:
+        bucket_name = BUCKET_NAME
+
+    torch.manual_seed(seed)
+    transformer = SpecifiedHookedViT(transformer_name, device=device)
+
+    if log_every is not None:
+        logger = GenerationLogger(run_name, None, log_every=log_every)
+    else:
+        logger = NOOPLogger()
+    
+
+    with logger as lg:
+        lg.log({
+            'event': 'start_generating',
+            'run_name': run_name,
+            'bs_per_cache': batches_per_cache,
+            'transformer_name': transformer_name,
+            'max_length': max_length,
+            'batch_size': batch_size,
+            'text_column_name': text_column_name,
+            'device': device,
+            'layer': layer,
+            'hook_name': hook_name,
+            'cache_type': cache_type,
+            'seed': seed,
+        })
+
+        cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        
+        transformer.eval()
+        means = None
+        stds = None
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+
+                activations = transformer.get_activations(batch)
+
+                if means is None:
+                    means = activations.mean(dim=0).detach().clone().to('cpu')
+                    stds = activations.std(dim=0).detach().clone().to('cpu')
+                else:
+                    means += activations.mean(dim=0).to('cpu')
+                    stds += activations.std(dim=0).to('cpu')
+
+                lg.log_batch(activations)
+
+                cache.append(activations.to('cpu'))
+
+            means /= i
+            stds /= i
+        
+        cache.save_mean_std(means, stds)
+        cache.finalize()
+

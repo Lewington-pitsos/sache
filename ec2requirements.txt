@@ -7,3 +7,4 @@ fire
 randomname
 img2dataset
 pyspark
+transformers

@@ -58,6 +58,8 @@ def main(
         cache_buffer_size=3,
         n_cache_workers=4,
         architecture='topk',
+        lr_warmup_steps=None,
+        geom_median_file=None
     ):
 
     if outer_batch_size < batch_size:
@@ -69,6 +71,11 @@ def main(
     
     train_logger = TrainLogger(data_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
     # train_logger = NOOPLogger()
+    if geom_median_file is not None:
+        geom_median = torch.load('cruft/geom_median.pt').to(device)
+    else:
+        geom_median = None
+
     if n_experts is not None:
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
@@ -80,7 +87,7 @@ def main(
                 n_experts=n_experts, 
                 d_in=d_in, 
                 device=device, 
-                efficient=False
+                efficient=False,
             )
         else:
             sae = TopKSwitchSAE(
@@ -89,14 +96,14 @@ def main(
                 n_experts=n_experts, 
                 d_in=d_in, 
                 device=device, 
-                efficient=False, 
+                efficient=False,
             )
         dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
         if architecture == 'topk':
-            sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
+            sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device, geom_median=geom_median)
         elif architecture == 'relu':
-            sae = SAE(n_features=n_feats, d_in=d_in, device=device)
+            sae = SAE(n_features=n_feats, d_in=d_in, device=device, geom_median=geom_median)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
@@ -120,6 +127,9 @@ def main(
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
+
+        if lr_warmup_steps is not None:
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: min(1, epoch / lr_warmup_steps))
 
         cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size)
 
@@ -216,6 +226,8 @@ def main(
 
                 loss.backward()
                 optimizer.step()
+                if lr_warmup_steps is not None:
+                    scheduler.step()
 
                 lg.log_loss(
                     mse=mse, 
@@ -226,7 +238,7 @@ def main(
                     latent=latent, 
                     dead_pct=dead_latent_pct, 
                     expert_privilege=expert_privilege,
-                    lr=optimizer.param_groups[-1]['lr'],
+                    lr=optimizer.param_groups[0]['lr'],
                     position_mse=position_mse,
                     explained_variance=explained_variance,
                     variance_prop_mse=variance_prop_mse,

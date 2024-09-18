@@ -5,3 +5,5 @@ sae_lens
 wandb
 fire
 randomname
+img2dataset
+pyspark

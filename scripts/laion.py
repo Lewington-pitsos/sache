@@ -3,20 +3,20 @@ import shutil
 import os
 from pyspark.sql import SparkSession  # pylint: disable=import-outside-toplevel
 
-output_dir = os.path.abspath("bench")
+output_dir = os.path.abspath("../laion_imgs")
 
 if os.path.exists(output_dir):
     shutil.rmtree(output_dir)
 
 spark = (
-    SparkSession.builder.config("spark.driver.memory", "16G").master("local[16]").appName("spark-stats").getOrCreate()
+    SparkSession.builder.config("spark.driver.memory", "32G").master("local[16]").appName("spark-stats").getOrCreate()
 )
 
 download(
     processes_count=12,
     thread_count=32,
-    url_list="../tests/test_files/test_10000.parquet",
-    image_size=256,
+    url_list="../laion/pq-10/",
+    image_size=224, # as used by https://huggingface.co/laion/CLIP-ViT-L-14-laion2B-s32B-b82K/tree/main
     output_folder=output_dir,
     output_format="webdataset",
     input_format="parquet",

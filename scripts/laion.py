@@ -9,9 +9,9 @@ if __name__ == "__main__":
     )
 
     download(
-        processes_count=12,
-        thread_count=32,
-        url_list="laion/pq-1/",
+        processes_count=14,
+        thread_count=64,
+        url_list="laion/pq-10/",
         image_size=224, # as used by https://huggingface.co/laion/CLIP-ViT-L-14-laion2B-s32B-b82K/tree/main
         output_format="files",
         input_format="parquet",

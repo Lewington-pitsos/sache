@@ -46,7 +46,11 @@ class GenerationLogger(ProcessLogger):
         if self.n % self.log_every == 0:
             batch_size = activations.shape[0]
 
-            sample_sequence_act = activations[0]
+            if len(activations.shape) == 3:
+                sample_sequence_act = activations[0]
+            else:
+                sample_sequence_act = activations
+            
             log_data = {
                 'event': 'batch_processed',
                 'batches_processed': self.n, 
@@ -57,9 +61,9 @@ class GenerationLogger(ProcessLogger):
                 'activations_max': activations.max().item(),
                 'activations_std': activations.std().item(),
 
-                'sample_mean_activations': torch.mean(sample_sequence_act[:, self.sample_activations:], dim=0).tolist(),
-                'sample_max_activations': torch.max(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
-                'sample_min_activations': torch.min(sample_sequence_act[:, self.sample_activations:], dim=0).values.tolist(),
+                'sample_mean_activations': torch.mean(sample_sequence_act[:, :self.sample_activations], dim=0).tolist(),
+                'sample_max_activations': torch.max(sample_sequence_act[:, :self.sample_activations], dim=0).values.tolist(),
+                'sample_min_activations': torch.min(sample_sequence_act[:, :self.sample_activations], dim=0).values.tolist(),
             }
 
             if input_ids is not None:

@@ -21,6 +21,5 @@ pad.ipynb
 
 wandb
 laion/*
-!laion/.gitignore
-laion_imgs
+laion_images
 images

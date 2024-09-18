@@ -5,6 +5,10 @@ Laion-5B -> still has the faces in, but no porn/harm https://arxiv.org/pdf/2210.
 
 https://huggingface.co/laion/CLIP-ViT-L-14-laion2B-s32B-b82K trained on the LAION-2B english dataset. We will use this, only 75% acc on imagenet, but like imagenet is for nerds anyway, it probably does not map to good ability to represent the world.
 
+weirdly hugo only used the cls token from the end of the CLIP thingo and doesn't give an excellent justification. Let's try all 256 at some point.
+
+- profile why the generation is 4x as slow as it ought to be
+
 ## Random notes
 
 

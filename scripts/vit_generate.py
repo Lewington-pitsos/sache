@@ -27,7 +27,7 @@ def main(
 
     vit_generate(
         run_name,
-        batches_per_cache=384,
+        batches_per_cache=10,
         dataset=dataset, 
         transformer_name=transformer_name, 
         batch_size=batch_size, 
@@ -36,6 +36,7 @@ def main(
         hook_name="resid",
         cache_type='s3_threaded_nonshuffling',
         n_samples=n_samples,
+        log_every=3,
         bucket_name=bucket_name,
     )
 

@@ -12,7 +12,6 @@ from sache.imgloader import FileDataset
 # python scripts/vit_generate.py --run_name "ViT-3_000_000" --n_samples=3000000 --batch_size=2048
 # python scripts/vit_generate.py --run_name "ViT_100_000" --n_samples=100000 --batch_size=2048 --log_every=0
 
-
 def main(
         run_name=None, 
         bucket_name=None, 

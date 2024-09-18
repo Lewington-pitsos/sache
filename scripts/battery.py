@@ -1,31 +1,18 @@
 from train_sae import main
 
 configs = [
-    # { #     "log_id": "filterma_fix", #     "n_feats": 3072, #     "n_experts": 4, #     "batch_size": 65536, #     "shuffle": False, #     "lr": 0.0008, #     "wandb_project": "position_mse", #     "skip_first_n": 0, #     "filter_ma": True # }, # {
-    #     "log_id": "no_filterma",
-    #     "n_feats": 3072,
-    #     "n_experts": 4,
-    #     "batch_size": 65536,
-    #     "shuffle": False,
-    #     "lr": 0.0008,
-    #     "wandb_project": "position_mse",
-    #     "skip_first_n": 0,
-    #     "filter_ma": False
-    # },
     {
-        "log_id": "gemma2",
-        "n_feats": 3072,
-        "n_experts": 4,
-        "batch_size": 65536,
+        "log_id": "test",
+        "wandb_project": "vit-sae-test",
+        "n_feats": 4096,
+        "batch_size": 4096 * 4,
         "shuffle": False,
         "lr": 0.0008,
-        "wandb_project": "position_mse",
-        "skip_first_n": 0,
-        "filter_ma": False,
-        'run_name': "gemma2b",
-        "d_in": 2048,
-        "samples_per_file": 128,
-        
+        'data_name': "ViT-3_000_000",
+        "d_in": 1024,
+        "samples_per_file": 20480,
+        "seq_len": 1,
+        "cache_buffer_size": 6,
     }
 ]
 

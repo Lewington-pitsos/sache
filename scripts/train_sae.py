@@ -14,18 +14,30 @@ from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupTopkSwitchSAE
 from sache.constants import MB, BUCKET_NAME
 from sache.log import NOOPLogger
 
-# base bs 4096
-# base lr 1e-4
+# python scripts/train_sae.py --data_name=ViT-3_000_000 --d_in=1024 --n_tokens=20480 --n_feats=4096 
+
+def flatten_activations(t, seq_len, skip_first_n, filter_ma, is_ma, d_in, device):
+    if len(t.shape) == 2:
+        return t, torch.zeros(t.shape[0], dtype=torch.int64, device=device)
+
+    positions = torch.linspace(0, seq_len - skip_first_n - 1, 0, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+    t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
+    if filter_ma:
+        flat_ma = is_ma.flatten(0, 1)
+        t = t[~flat_ma]
+        positions = positions[~flat_ma]
+
+    return t, positions
 
 def main(
-        run_name = 'merciless-citadel',
+        data_name = 'merciless-citadel',
         n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
         d_in = 768,
         batch_size = 4096,
         outer_batch_size = 8192 * 32,
-        n_experts = 32,
+        n_experts = None,
         l1_coefficient = 2e-3,
         privilege_weighting = 2e-1,
         lr = 3e-4,
@@ -37,13 +49,13 @@ def main(
         data_bucket=BUCKET_NAME,
         shuffle=True,
         wandb_project=None,
-        switch_sae=True,  
         log_id=None, 
         secondary_input=None,
         seq_len=1024,
         skip_first_n=0,
         batch_norm=True,
-        filter_ma=False
+        filter_ma=False,
+        cache_buffer_size=3,
     ):
 
     if outer_batch_size < batch_size:
@@ -53,9 +65,9 @@ def main(
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(run_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
+    train_logger = TrainLogger(data_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
     # train_logger = NOOPLogger()
-    if switch_sae:
+    if n_experts is not None:
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = dict[secondary_input]
@@ -84,7 +96,7 @@ def main(
     with train_logger as lg:
         lg.log_params({
             'k': k,
-            'switch_sae': switch_sae,
+            'switch_sae': n_experts is not None,
             'skip_first_n': skip_first_n,
             'batch_norm': batch_norm,
             'secondary_input': secondary_input,
@@ -102,7 +114,7 @@ def main(
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
 
-        cache = S3RCache(s3_client, run_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=3)
+        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=cache_buffer_size)
 
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * seq_len
@@ -110,7 +122,6 @@ def main(
         if shuffle:
             cache = ShufflingRCache(cache, batch_size=outer_batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
         else:
-            # cache = RBatchingCache(cache, batch_size=outer_batch_size)
             pass
 
         overall_start = time.time()
@@ -118,26 +129,21 @@ def main(
 
         current_files_worth = 0
         token_count = 0
-        for t in cache:
-            t = t.to(device)  # (n_samples, seq_len, d_in)
-            t = t[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
-            is_ma = t.max(dim=-1).values > 1e3
+        for acts in cache:
+            acts = acts.to(device)  # (n_samples, seq_len, d_in)
+            acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
+            is_ma = acts.max(dim=-1).values > 1e3
+
+            acts, positions = flatten_activations(acts, seq_len, skip_first_n, filter_ma, is_ma, d_in, device)
 
             if secondary_input is not None:
-                token_ids = t[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
+                token_ids = acts[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
             else:
                 token_ids = None
 
-            positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
-            t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
-            if filter_ma:
-                flat_ma = is_ma.flatten(0, 1)
-                t = t[~flat_ma]
-                positions = positions[~flat_ma]
-
-            for idx in range(0, (t.shape[0] // batch_size) * batch_size, batch_size):
+            for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
                 token_count += batch_size
-                batch = t[idx:idx+batch_size]
+                batch = acts[idx:idx+batch_size]
                 batch_positions = positions[idx:idx+batch_size]
 
                 optimizer.zero_grad()
@@ -170,10 +176,12 @@ def main(
                         mse_sum = torch.bincount(batch_positions, weights=sample_mse)
                         position_counts = torch.bincount(batch_positions)
                         position_mse = mse_sum / torch.clamp(position_counts, min=1)
+                    elif seq_len == 1:
+                        position_mse = sample_mse.mean().unsqueeze(0)
                     else:
                         position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
-                mse = (delta).mean()
+                mse = delta.mean()
                 mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()
                 scaled_mse = mse / mean_pred_mse    
 
@@ -197,7 +205,6 @@ def main(
                     dead_pct=dead_latent_pct, 
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
-                    secondary_input=None,
                     position_mse=position_mse,
                     massive_activations=is_ma.to_sparse().indices()
                 )

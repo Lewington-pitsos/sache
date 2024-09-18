@@ -365,7 +365,7 @@ class S3RCache():
                 ))
                 p.start()
                 self._running_processes.append(p)
-                time.sleep(0.75)
+                time.sleep(0.5)
 
         return self
 

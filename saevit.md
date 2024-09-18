@@ -8,6 +8,7 @@ https://huggingface.co/laion/CLIP-ViT-L-14-laion2B-s32B-b82K trained on the LAIO
 weirdly hugo only used the cls token from the end of the CLIP thingo and doesn't give an excellent justification. Let's try all 256 at some point.
 
 - profile why the generation is 4x as slow as it ought to be
+- check if loss is normalized for saevit
 
 ## Random notes
 

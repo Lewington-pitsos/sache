@@ -24,7 +24,7 @@ class TrainLogger(ProcessLogger):
     def log_sae(self, sae, info=None):
         if isinstance(sae, SAE):
             message = self._log_sae(sae)
-        if isinstance(sae, TopKSAE):
+        elif isinstance(sae, TopKSAE):
             message = self._log_sae(sae)
         elif isinstance(sae, TopKSwitchSAE):
             message = self._log_switch_sae(sae)
@@ -95,7 +95,9 @@ class TrainLogger(ProcessLogger):
             },
         }
 
-    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, expert_privilege, lr, position_mse, massive_activations):
+    def log_loss(self, mse, scaled_mse, l1, loss, batch, latent, dead_pct, 
+                expert_privilege, lr, position_mse, explained_variance, 
+                variance_prop_mse, massive_activations):
         with torch.no_grad():
             message = {
                 'event': 'training_batch', 
@@ -104,6 +106,12 @@ class TrainLogger(ProcessLogger):
                 'loss': loss.item(),
                 'batch_learning_rate': lr
             }
+
+            if variance_prop_mse is not None:
+                message['variance_proportional_mse'] = variance_prop_mse.item()
+
+            if explained_variance is not None:
+                message['explained_variance'] = explained_variance.item()
 
             if massive_activations is not None:
                 message['massive_activations'] = massive_activations.cpu().numpy().tolist()

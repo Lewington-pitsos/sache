@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger
-from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupTopkSwitchSAE
+from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupTopkSwitchSAE, SAE
 from sache.constants import MB, BUCKET_NAME
 from sache.log import NOOPLogger
 
@@ -42,7 +42,7 @@ def main(
         privilege_weighting = 2e-1,
         lr = 3e-4,
         samples_per_file = 1024,
-        tokens_till_latent_dies = 10_000_000,
+        tokens_till_latent_dies = 1_000_000,
         device = 'cuda',
         use_wandb=True,
         log_bucket=BUCKET_NAME,
@@ -56,6 +56,8 @@ def main(
         batch_norm=True,
         filter_ma=False,
         cache_buffer_size=3,
+        n_cache_workers=4,
+        architecture='topk',
     ):
 
     if outer_batch_size < batch_size:
@@ -91,7 +93,12 @@ def main(
             )
         dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
-        sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
+        if architecture == 'topk':
+            sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
+        elif architecture == 'relu':
+            sae = SAE(n_features=n_feats, d_in=d_in, device=device)
+        else:
+            raise ValueError(f"Unknown architecture: {architecture}")
 
     with train_logger as lg:
         lg.log_params({
@@ -114,7 +121,7 @@ def main(
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
 
-        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=cache_buffer_size)
+        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size)
 
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = samples_per_file * seq_len
@@ -168,7 +175,7 @@ def main(
                 else:
                     dead_latent_pct = None
 
-                delta = (batch - reconstruction) ** 2
+                delta = (batch - reconstruction).pow(2)
                 
                 with torch.no_grad():
                     sample_mse = delta.mean(dim=1)
@@ -181,9 +188,15 @@ def main(
                     else:
                         position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
+                    activationwise_variance = batch.pow(2).sum(-1)
+                    activationwise_delta = delta.sum(-1)
+                    explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
+
+                    variance_prop_mse = (delta / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
+
                 mse = delta.mean()
-                mean_pred_mse = ((batch - batch.mean(0)) ** 2).mean()
-                scaled_mse = mse / mean_pred_mse    
+                variance = (batch - batch.mean(0)).pow(2).mean()
+                scaled_mse = mse / variance    
 
                 if output['expert_weighting'] is not None:
                     expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
@@ -192,13 +205,22 @@ def main(
                     expert_privilege = None
                     loss = scaled_mse
 
+                    if architecture == 'relu':
+                        l1 = output['latent'].abs().sum(dim=1).mean()
+                        loss += l1_coefficient * l1
+                    else:
+                        l1 = None
+
                 latent = output['latent']
                 experts_chosen = output['experts_chosen']
+
+                loss.backward()
+                optimizer.step()
 
                 lg.log_loss(
                     mse=mse, 
                     scaled_mse=scaled_mse,
-                    l1=None, 
+                    l1=l1, 
                     loss=loss, 
                     batch=batch, 
                     latent=latent, 
@@ -206,11 +228,10 @@ def main(
                     expert_privilege=expert_privilege,
                     lr=optimizer.param_groups[-1]['lr'],
                     position_mse=position_mse,
+                    explained_variance=explained_variance,
+                    variance_prop_mse=variance_prop_mse,
                     massive_activations=is_ma.to_sparse().indices()
                 )
-
-                loss.backward()
-                optimizer.step()
 
                 if token_count >= n_tokens:
                     overall_end = time.time()

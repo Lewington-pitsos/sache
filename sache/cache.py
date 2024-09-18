@@ -440,7 +440,13 @@ class ShufflingRCache():
         return self._current_idx == self.buffer_size
 
     def _add_to_buffer(self, activations):
-        flat_activations = activations.flatten(0, 1)
+        if len(activations.shape) == 3:
+            flat_activations = activations.flatten(0, 1)
+        elif len(activations.shape) == 2:
+            flat_activations = activations
+        else:
+            raise ValueError(f"tried to save unexpected activations shape {activations.shape}")
+
 
         if self.buffer_size % flat_activations.shape[0] != 0:
             raise ValueError(f'Buffer size {self.buffer_size} must always be divisible by flattened activations shape, but got: {flat_activations.shape}')

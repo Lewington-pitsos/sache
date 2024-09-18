@@ -114,7 +114,6 @@ class LookupTopkSwitchSAE(TopKSwitchSAE):
 
         return output
 
-
 class SAE(torch.nn.Module):
     def __init__(self, n_features, d_in, device):
         super(SAE, self).__init__()

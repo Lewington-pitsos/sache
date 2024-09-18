@@ -7,7 +7,8 @@ data
 log
 cache
 design
-cruft
+cruft/*
+!/cruft/.gitignore
 
 **/*.terraform*
 **/terraform.tfstate
@@ -21,3 +22,4 @@ pad.ipynb
 wandb
 laion/*
 !laion/.gitignore
+laion_imgs

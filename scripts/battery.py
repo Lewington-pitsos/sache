@@ -27,7 +27,7 @@ configs = [
         "batch_size": 1024,
         "k": 128,
         "lr": 0.0004,
-        "l1_coefficient": 0.00008,
+        "l1_coefficient":0.00008,
         'data_name': "ViT-3_000_000",
         "d_in": 1024,
         "samples_per_file": 20480,
@@ -36,7 +36,10 @@ configs = [
         "n_cache_workers": 6,
         "outer_batch_size": 4096,
         "architecture": 'relu',
+        "lr_warmup_steps": 500,
+        "geom_median_file": "cruft/geom_median.pt",
         # "use_wandb": False
+        "batch_norm": False
     }
 ]
 

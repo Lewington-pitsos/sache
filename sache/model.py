@@ -1,3 +1,4 @@
+import einops
 import torch
 
 class SwitchSAE(torch.nn.Module):
@@ -124,19 +125,38 @@ class SAE(torch.nn.Module):
         self.dec = torch.nn.Parameter(self.enc.mT.clone())
 
         if geom_median is not None:
-            self.pre_b = geom_median
+            self.pre_b.data = geom_median.to(self.pre_b.dtype).to(device)
 
         self.activation = torch.nn.ReLU()
 
     def _encode(self, x):
         return self.activation(x)
     
+    def set_decoder_norm_to_unit_norm(self):
+        with torch.no_grad():
+            self.dec.data /= torch.norm(self.dec.data, dim=1, keepdim=True)
+
+    def remove_gradient_parallel_to_decoder_directions(self):
+        with torch.no_grad():
+            parallel_component = einops.einsum(
+                self.dec.grad,
+                self.dec.data,
+                "d_sae d_in, d_sae d_in -> d_sae",
+            )
+            
+            self.W_dec.grad -= einops.einsum(
+                parallel_component,
+                self.dec.data,
+                "d_sae, d_sae d_in -> d_sae d_in",
+            )
+    
+
     def _decode(self, latent, dec):
         return latent, latent @ dec
 
     def forward_descriptive(self, x):
 
-        latent = self._encode((x - self.pre_b) @ self.enc + self.b_enc) # (n_to_expert, expert_dim)
+        latent = self._encode(((x - self.pre_b) @ self.enc) + self.b_enc) # (n_to_expert, expert_dim)
         latent, reconstruction = self._decode(latent, self.dec)
         
         reconstruction = reconstruction + self.pre_b 

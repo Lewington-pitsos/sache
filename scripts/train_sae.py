@@ -159,6 +159,8 @@ def main(
                 token_ids = None
 
             for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
+                sae.set_decoder_norm_to_unit_norm()
+
                 token_count += batch_size
                 batch = acts[idx:idx+batch_size]
                 batch_positions = positions[idx:idx+batch_size]
@@ -202,10 +204,10 @@ def main(
                     activationwise_delta = delta.sum(-1)
                     explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
 
-                    variance_prop_mse = (delta / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
 
                 mse = delta.mean()
                 variance = (batch - batch.mean(0)).pow(2).mean()
+                variance_prop_mse = (delta / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
                 scaled_mse = mse / variance    
 
                 if output['expert_weighting'] is not None:
@@ -213,18 +215,19 @@ def main(
                     loss = scaled_mse + (expert_privilege * privilege_weighting)
                 else:
                     expert_privilege = None
-                    loss = scaled_mse
 
                     if architecture == 'relu':
                         l1 = output['latent'].abs().sum(dim=1).mean()
-                        loss += l1_coefficient * l1
+                        loss = variance_prop_mse + l1_coefficient * l1
                     else:
+                        loss = variance_prop_mse
                         l1 = None
 
                 latent = output['latent']
                 experts_chosen = output['experts_chosen']
 
                 loss.backward()
+                sae.set_decoder_norm_to_unit_norm()
                 optimizer.step()
                 if lr_warmup_steps is not None:
                     scheduler.step()

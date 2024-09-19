@@ -1,7 +1,7 @@
 import json
 
 baseline =        {
-    "wandb_project": "vit-sae-test",
+    "wandb_project": "vit-switch-sae",
     "n_feats": 65536,
     "batch_size": 1024,
     "k": 32,
@@ -17,7 +17,7 @@ baseline =        {
 }
 
 all_configs = []
-for l1 in [0.0256, 0.0128, 0.0064,	0.0032,	0.0016,	0.0008,	0.0004]:
+for l1 in [0.00256, 0.00128, 0.00064,	0.00032,	0.00016,	0.00008,	0.00004, 0.00002]:
     config = baseline.copy()
     config['l1_coefficient'] = l1
     config['architecture'] = 'relu'
@@ -41,4 +41,4 @@ for k in [8,	16,	32,	64,	128,	256]:
         all_configs.append(config)
 
 with open('cruft/switch_configs.json', 'w') as f:
-    json.dump(all_configs, f)
+    json.dump(all_configs, f, indent=2)

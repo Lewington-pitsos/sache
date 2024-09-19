@@ -39,7 +39,7 @@ def main(
         outer_batch_size = 8192 * 32,
         n_experts = None,
         l1_coefficient = 2e-3,
-        privilege_weighting = 2e-1,
+        privilege_weighting = 1e-2,
         lr = 3e-4,
         samples_per_file = 1024,
         tokens_till_latent_dies = 1_000_000,

@@ -1,10 +1,11 @@
 from train_sae import main
+import json
 
 configs = [
     {
-        "name": "baseline-big-4x",
+        "name": "baseline-big-4x-fix",
         "wandb_project": "vit-sae-test",
-        "n_feats": 65536 * 4,
+        "n_feats": 65536,
         "batch_size": 1024,
         "k": 32,
         "lr": 0.0004,
@@ -20,6 +21,12 @@ configs = [
         "batch_norm": False,
     }
 ]
+
+# filename = 'cruft/switch_configs.json'
+# with open(filename) as f:
+#     configs = json.load(f)
+
+
 
 if __name__ == '__main__':
     print(f'running {len(configs)} configs')

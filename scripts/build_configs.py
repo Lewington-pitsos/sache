@@ -1,11 +1,10 @@
-from train_sae import main
+import json
 
-configs = [
-    {
-        "log_id": "baseline",
+baseline =     {
+        "log_id": "test",
         "wandb_project": "vit-sae-test",
         "n_feats": 1024,
-        "batch_size": 1024,
+        "batch_size": 4096,
         "k": 128,
         "lr": 0.0004,
         "l1_coefficient":0.00008,
@@ -19,11 +18,17 @@ configs = [
         "architecture": 'relu',
         "batch_norm": False,
     }
-]
 
-if __name__ == '__main__':
-    print(f'running {len(configs)} configs')
+all_configs = []
+for l1 in [0.0256, 0.0128, 0.0064,	0.0032,	0.0016,	0.0008,	0.0004]:
+    for 
+    config = baseline.copy()
+    config['l1_coefficient'] = l1
+    config['architecture'] = 'relu'
+    all_configs.append(config)
 
-    for config in configs:
-        print(f'Running with config: {config}')
-        main(**config)
+
+for k in [8,	16,	32,	64,	128,	256]:
+
+with open('cruft/relu_configs.json', 'w') as f:
+    json.dump(all_configs, f)

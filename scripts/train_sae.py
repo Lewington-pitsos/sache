@@ -124,6 +124,10 @@ def main(
             'outer_bs': outer_batch_size,
             'learning_rate': lr,
             'l1_coefficient': l1_coefficient,
+            'lr_warmup_steps': lr_warmup_steps,
+            'architecture': architecture,
+            'data_name': data_name,
+            'geom_median_file': geom_median_file,
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
@@ -159,8 +163,6 @@ def main(
                 token_ids = None
 
             for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
-                sae.set_decoder_norm_to_unit_norm()
-
                 token_count += batch_size
                 batch = acts[idx:idx+batch_size]
                 batch_positions = positions[idx:idx+batch_size]
@@ -227,7 +229,6 @@ def main(
                 experts_chosen = output['experts_chosen']
 
                 loss.backward()
-                sae.set_decoder_norm_to_unit_norm()
                 optimizer.step()
                 if lr_warmup_steps is not None:
                     scheduler.step()

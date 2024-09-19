@@ -139,12 +139,3 @@ if __name__ == "__main__":
     torch.save(out, 'cruft/geom_median.pt')
 
     print('finished')
-    # previous_distances = torch.norm(all_activations - previous_b_dec, dim=-1)
-    # distances = torch.norm(all_activations - out, dim=-1)
-
-    # print("Reinitializing b_dec with geometric median of activations")
-    # print(f"Previous distances: {previous_distances.median(0).values.mean().item()}")
-    # print(f"New distances: {distances.median(0).values.mean().item()}")
-
-    # out = torch.tensor(out, dtype=self.dtype, device=self.device)
-    # self.b_dec.data = out

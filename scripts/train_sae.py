@@ -47,9 +47,9 @@ def main(
         use_wandb=True,
         log_bucket=BUCKET_NAME,
         data_bucket=BUCKET_NAME,
-        shuffle=True,
+        shuffle=False,
         wandb_project=None,
-        log_id=None, 
+        name=None, 
         secondary_input=None,
         seq_len=1024,
         skip_first_n=0,
@@ -69,7 +69,7 @@ def main(
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
-    train_logger = TrainLogger(data_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=log_id)
+    train_logger = TrainLogger(data_name, log_mean_std=True, s3_backup_bucket=log_bucket, s3_client=s3_client, use_wandb=use_wandb, wandb_project=wandb_project, log_id=name)
     # train_logger = NOOPLogger()
     if geom_median_file is not None:
         geom_median = torch.load('cruft/geom_median.pt').to(device)
@@ -214,16 +214,16 @@ def main(
 
                 if output['expert_weighting'] is not None:
                     expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
-                    loss = scaled_mse + (expert_privilege * privilege_weighting)
+                    loss = variance_prop_mse + (expert_privilege * privilege_weighting)
                 else:
                     expert_privilege = None
 
-                    if architecture == 'relu':
-                        l1 = output['latent'].abs().sum(dim=1).mean()
-                        loss = variance_prop_mse + l1_coefficient * l1
-                    else:
-                        loss = variance_prop_mse
-                        l1 = None
+                if architecture == 'relu':
+                    l1 = output['latent'].abs().sum(dim=1).mean()
+                    loss = variance_prop_mse + l1_coefficient * l1
+                else:
+                    loss = variance_prop_mse
+                    l1 = None
 
                 latent = output['latent']
                 experts_chosen = output['experts_chosen']

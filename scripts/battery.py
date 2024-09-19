@@ -2,21 +2,21 @@ from train_sae import main
 
 configs = [
     {
-        "log_id": "baseline",
+        "name": "baseline-big-4x",
         "wandb_project": "vit-sae-test",
-        "n_feats": 1024,
+        "n_feats": 65536 * 4,
         "batch_size": 1024,
-        "k": 128,
+        "k": 32,
         "lr": 0.0004,
         "l1_coefficient":0.00008,
         'data_name': "ViT-3_000_000",
         "d_in": 1024,
         "samples_per_file": 20480,
         "seq_len": 1,
+        "n_experts": 4,
         "cache_buffer_size": 10,
         "n_cache_workers": 6,
-        "outer_batch_size": 4096,
-        "architecture": 'relu',
+        "architecture": 'topk',
         "batch_norm": False,
     }
 ]

@@ -1,44 +1,42 @@
 import json
 
-baseline =        {
-    "wandb_project": "vit-switch-sae",
-    "n_feats": 65536,
-    "batch_size": 1024,
-    "k": 32,
-    "lr": 0.0004,
-    "l1_coefficient":0.00008,
-    'data_name': "ViT-3_000_000",
-    "d_in": 1024,
-    "samples_per_file": 20480,
-    "seq_len": 1,
-    "cache_buffer_size": 10,
-    "n_cache_workers": 6,
-    "batch_norm": False,
-}
+baseline =     {
+        "name": "k32-baseline",
+        "wandb_project": "vit-sae-test",
+        "n_feats": 65536,
+        "batch_size": 1024,
+        "k": 32,
+        "lr": 0.0004,
+        "l1_coefficient":0.00008,
+        'data_name': "ViT-3_000_000",
+        "d_in": 1024,
+        "samples_per_file": 20480,
+        "seq_len": 1,
+        "n_experts": None,
+        "cache_buffer_size": 10,
+        "n_cache_workers": 6,
+        "architecture": 'topk',
+        "batch_norm": False,
+        "use_wandb": False
+    }
 
+    
 all_configs = []
-for l1 in [0.00256, 0.00128, 0.00064,	0.00032,	0.00016,	0.00008,	0.00004, 0.00002]:
+
+for batch_expansion in [8]:
     config = baseline.copy()
-    config['l1_coefficient'] = l1
-    config['architecture'] = 'relu'
-    config['name'] = f'relu-l1-{l1}'
+    config['name'] = f"kk32-baseline-{batch_expansion}"
+    config['batch_size'] = 1024 * batch_expansion
     all_configs.append(config)
 
-
-for k in [8,	16,	32,	64,	128,	256]:
-    config = baseline.copy()
-    config['k'] = k
-    config['architecture'] = 'topk'
-    for n_experts in [None, 8, 16, 32, 64, 128]:
+    for n_experts in [4, 16, 64, 256]:
+        config = baseline.copy()
+        config['name'] = f"kk32-expansion-{batch_expansion}-experts-{n_experts}"
         config['n_experts'] = n_experts
-        config['name'] = f'topkk-{k}-experts-{n_experts}'
+        config['batch_size'] = 1024 * batch_expansion
         all_configs.append(config)
 
-    for n_experts in [2, 4, 8]:
-        config['n_experts'] = n_experts
-        config['n_feats'] = config['n_feats'] * n_experts
-        config['name'] = f'topkk-{k}-experts-{n_experts}-flopscaled'
-        all_configs.append(config)
 
+print('num configs', len(all_configs))
 with open('cruft/switch_configs.json', 'w') as f:
     json.dump(all_configs, f, indent=2)

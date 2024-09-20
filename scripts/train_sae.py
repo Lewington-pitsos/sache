@@ -254,6 +254,7 @@ def main(
                     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
                     return
 
+
             files_worth = token_count // tokens_per_file
             if files_worth > current_files_worth:
                 current_files_worth = files_worth
@@ -268,6 +269,7 @@ def main(
                         'time_to_process_file': elapsed, 
                         'mb_downloaded': total_size / MB, 
                         'mbps': total_size / MB / elapsed,
+                        'tokens_per_second': tokens_per_file / elapsed,
                         'total_time_elapsed': overall_elapsed,
                         'file': files_worth,
                     })

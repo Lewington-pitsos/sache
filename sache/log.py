@@ -3,6 +3,8 @@ import json
 import os
 from uuid import uuid4
 import boto3
+import torch
+import psutil
 import wandb
 
 from sache.constants import BUCKET_NAME
@@ -54,6 +56,16 @@ class ProcessLogger():
 
         with open(self._log_filename(), 'a') as f:
             f.write(json.dumps(data) + '\n')
+
+    def log_gpu_usage(self):
+        if torch.cuda.is_available():
+            self.log({
+                'event': 'system_usage',
+                'torch.cuda.memory_allocated': torch.cuda.memory_allocated(0) / 1024**2,
+                'torch.cuda.memory_reserved': torch.cuda.memory_reserved(0) / 1024**2,
+                'torch.cuda.max_memory_reserved': torch.cuda.max_memory_reserved(0) / 1024**2,
+                'cpu_percent': psutil.cpu_percent(),
+            })
 
     def log_params(self, params):
         if self.use_wandb:

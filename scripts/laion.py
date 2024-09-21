@@ -11,8 +11,8 @@ if __name__ == "__main__":
     download(
         processes_count=14,
         thread_count=64,
-        url_list="laion/pq-10/",
-        image_size=224, # as used by https://huggingface.co/laion/CLIP-ViT-L-14-laion2B-s32B-b82K/tree/main
+        url_list="laion/pq-11/",
+        image_size=256, 
         output_format="files",
         input_format="parquet",
         url_col="URL",

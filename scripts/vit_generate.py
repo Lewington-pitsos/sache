@@ -10,6 +10,8 @@ from sache.generator import vit_generate
 from sache.imgloader import FileDataset
 
 # python scripts/vit_generate.py --run_name "ViT-3_000_000" --n_samples=3000000 --batch_size=2048
+# python scripts/vit_generate.py --run_name "ViT-45_000_000" --n_samples=46000000 --batch_size=2048
+
 # python scripts/vit_generate.py --run_name "ViT_100_000" --n_samples=100000 --batch_size=2048 --log_every=0
 
 def main(
@@ -18,7 +20,7 @@ def main(
         n_samples=None,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
         batch_size=1024,
-        log_every=7,
+        log_every=10,
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -29,7 +31,7 @@ def main(
 
     vit_generate(
         run_name,
-        batches_per_cache=10,
+        batches_per_cache=50,
         dataset=dataset, 
         transformer_name=transformer_name, 
         batch_size=batch_size, 

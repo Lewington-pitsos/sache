@@ -8,3 +8,5 @@ randomname
 img2dataset
 pyspark
 transformers
+pyserini
+beir

@@ -26,7 +26,7 @@ def main(
         run_name = randomname.generate('adj/', 'n/')
     print('run_name:', run_name)
 
-    data_directory = 'laion_images'
+    data_directory = 'images'
     dataset = FileDataset(root_dir=data_directory)
 
     vit_generate(

@@ -299,3 +299,6 @@ def vit_generate(
         
         cache.save_mean_std(means, stds)
         cache.finalize()
+
+
+46000000

@@ -290,11 +290,12 @@ def main(
 
                 start = time.time()
 
-            if token_count >= next_save:
+            if next_save is not None and token_count >= next_save:
                 save_sae(sae, token_count, data_name, lg.log_id)
                 next_save += save_every
-
-        save_sae(sae, token_count, data_name, lg.log_id)
+        
+        if save_every is not None:
+            save_sae(sae, token_count, data_name, lg.log_id)
 
 if __name__ == "__main__":
     fire.Fire(main)

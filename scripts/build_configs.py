@@ -1,42 +1,40 @@
 import json
 
-baseline =     {
-        "name": "k32-baseline",
-        "wandb_project": "vit-sae-test",
-        "n_feats": 65536,
-        "batch_size": 1024,
-        "k": 32,
-        "lr": 0.0004,
-        "l1_coefficient":0.00008,
-        'data_name': "ViT-3_000_000",
-        "d_in": 1024,
-        "samples_per_file": 20480,
-        "seq_len": 1,
-        "n_experts": None,
-        "cache_buffer_size": 10,
-        "n_cache_workers": 6,
-        "architecture": 'topk',
-        "batch_norm": False,
-        "use_wandb": False
-    }
+baseline =        {
+    "wandb_project": "vit-sae-test",
+    "n_feats": 65536,
+    "n_tokens": 24_000_000,
+    "batch_size": 4024 * 2,
+    "k": 32,
+    "lr": 0.0016,
+    "l1_coefficient": 0.00008,
+    'data_name': "ViT-45_000_000",
+    "d_in": 1024,
+    "samples_per_file": 102_400,
+    "seq_len": 1,
+    "cache_buffer_size": 3,
+    "n_cache_workers": 4,
+    "batch_norm": False,
+}
 
-    
 all_configs = []
 
-for batch_expansion in [8]:
+for l1 in [ 2e-05, 3e-05, 4e-05, 5e-05, 6e-05, 6e-05, 8e-05, 9e-05, 0.0001, 0.00012, 0.00016, 0.0002]:
     config = baseline.copy()
-    config['name'] = f"kk32-baseline-{batch_expansion}"
-    config['batch_size'] = 1024 * batch_expansion
+    config['l1_coefficient'] = l1
+    config['architecture'] = 'relu'
+    config['name'] = f'relu-l1-{l1}'
     all_configs.append(config)
 
-    for n_experts in [4, 16, 64, 256]:
-        config = baseline.copy()
-        config['name'] = f"kk32-expansion-{batch_expansion}-experts-{n_experts}"
+for k in [8, 16, 32,	64,	128, 256]:
+    config = baseline.copy()
+    config['k'] = k
+    config['architecture'] = 'topk'
+    for n_experts in [None, 4, 8, 16, 32, 64, 128]:
         config['n_experts'] = n_experts
-        config['batch_size'] = 1024 * batch_expansion
+        config['name'] = f'topkk-{k}-experts-{n_experts}'
         all_configs.append(config)
 
 
-print('num configs', len(all_configs))
 with open('cruft/switch_configs.json', 'w') as f:
     json.dump(all_configs, f, indent=2)

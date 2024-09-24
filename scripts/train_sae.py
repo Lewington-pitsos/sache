@@ -14,7 +14,16 @@ from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE, LookupTopkSwitchSAE, 
 from sache.constants import MB, BUCKET_NAME
 from sache.log import NOOPLogger
 
-# python scripts/train_sae.py --data_name=ViT-3_000_000 --d_in=1024 --n_tokens=20480 --n_feats=4096 
+def save_sae(sae, n_iter, data_name, name, base_dir='cruft'):
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+    
+    model_dir = os.path.join(base_dir, data_name + '-' + name)
+
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
+    torch.save(sae, os.path.join(model_dir, f'{n_iter}.pt'))
 
 def flatten_activations(t, seq_len, skip_first_n, filter_ma, is_ma, d_in, device):
     if len(t.shape) == 2:
@@ -59,7 +68,8 @@ def main(
         n_cache_workers=4,
         architecture='topk',
         lr_warmup_steps=None,
-        geom_median_file=None
+        geom_median_file=None,
+        save_every=2_500_000,
     ):
 
     if outer_batch_size < batch_size:
@@ -150,6 +160,7 @@ def main(
 
         current_files_worth = 0
         token_count = 0
+        next_save = save_every
         for acts in cache:
             acts = acts.to(device)  # (n_samples, seq_len, d_in)
             acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
@@ -189,10 +200,11 @@ def main(
                 else:
                     dead_latent_pct = None
 
-                delta = (batch - reconstruction).pow(2)
+                delta = batch - reconstruction
+                delta_pow = delta.pow(2)
                 
                 with torch.no_grad():
-                    sample_mse = delta.mean(dim=1)
+                    sample_mse = delta_pow.mean(dim=1)
                     if skip_first_n > 0 or filter_ma:
                         mse_sum = torch.bincount(batch_positions, weights=sample_mse)
                         position_counts = torch.bincount(batch_positions)
@@ -203,14 +215,14 @@ def main(
                         position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
                     activationwise_variance = batch.pow(2).sum(-1)
-                    activationwise_delta = delta.sum(-1)
+                    activationwise_delta = delta_pow.sum(-1)
                     explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
 
 
-                mse = delta.mean()
-                variance = (batch - batch.mean(0)).pow(2).mean()
-                variance_prop_mse = (delta / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
-                scaled_mse = mse / variance    
+                mse = delta_pow.mean()
+                variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
+                sum_mse = delta_pow.sum(dim=-1).mean()   
+
 
                 if output['expert_weighting'] is not None:
                     expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
@@ -235,7 +247,7 @@ def main(
 
                 lg.log_loss(
                     mse=mse, 
-                    scaled_mse=scaled_mse,
+                    sum_mse=sum_mse,
                     l1=l1, 
                     loss=loss, 
                     batch=batch, 
@@ -246,8 +258,10 @@ def main(
                     position_mse=position_mse,
                     explained_variance=explained_variance,
                     variance_prop_mse=variance_prop_mse,
-                    massive_activations=is_ma.to_sparse().indices()
+                    massive_activations=is_ma.to_sparse().indices(),
                 )
+
+                
 
                 if token_count >= n_tokens:
                     overall_end = time.time()
@@ -275,6 +289,12 @@ def main(
                     })
 
                 start = time.time()
+
+            if token_count >= next_save:
+                save_sae(sae, token_count, data_name, lg.log_id)
+                next_save += save_every
+
+        save_sae(sae, token_count, data_name, lg.log_id)
 
 if __name__ == "__main__":
     fire.Fire(main)

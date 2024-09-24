@@ -23,8 +23,6 @@ class ProcessLogger():
         else:
             self.log_id = str(uuid4())
 
-
-
         self.use_wandb = use_wandb
 
         if not os.path.exists(LOG_DIR):

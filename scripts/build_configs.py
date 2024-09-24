@@ -1,7 +1,7 @@
 import json
 
 baseline =        {
-    "wandb_project": "vit-switch-sae",
+    "wandb_project": "vit-switch-sae-summse",
     "n_feats": 65536,
     "n_tokens": 24_000_000,
     "batch_size": 4024 * 2,

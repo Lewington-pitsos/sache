@@ -213,7 +213,6 @@ def generate(
 
             means /= i
             stds /= i
-
         
         cache.save_mean_std(means, stds)
         cache.finalize()
@@ -273,7 +272,7 @@ def vit_generate(
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
-                activations = transformer.get_activations(batch)
+                activations = transformer.cls_activations(batch)
 
                 if means is None:
                     means = activations.mean(dim=0).to('cpu')
@@ -299,6 +298,3 @@ def vit_generate(
         
         cache.save_mean_std(means, stds)
         cache.finalize()
-
-
-46000000

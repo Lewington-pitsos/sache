@@ -177,7 +177,7 @@ class SpecifiedHookedViT(HookedVisionTransformer):
         self.module_name = module_name
         self.list_of_hook_locations = [(block_layer, module_name)]
 
-    def get_activations(self, batch):
+    def all_activations(self, batch):
         inputs = self.processor(images=batch, text = "", return_tensors="pt", padding = True).to(self.model.device)
 
         activations = self.run_with_cache(
@@ -185,4 +185,7 @@ class SpecifiedHookedViT(HookedVisionTransformer):
             **inputs,
         )[1][self.list_of_hook_locations[0]]
 
-        return activations[:,0,:] # only the last activation
+        return activations # only the last activation
+
+    def cls_activations(self, batch):
+        return self.all_activations(batch)[:,0]

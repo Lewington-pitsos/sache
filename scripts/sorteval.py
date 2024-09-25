@@ -20,10 +20,6 @@ def load_topk_indices(output_dir: str, feature_idx: int) -> List[int]:
     return data.get('indices', [])
 
 def load_image_paths(output_dir: str, feature_idx: int) -> List[str]:
-    """
-    Loads the top 9 image paths for a given feature index.
-    Assumes images are named as 'feature_{feature_idx}_top9_{i}.png' where i is 1-9.
-    """
     image_files = sorted(glob.glob(os.path.join(output_dir, f'feature_{feature_idx}_top9_*.png')))
     if len(image_files) != 9:
         print(image_files)
@@ -31,15 +27,6 @@ def load_image_paths(output_dir: str, feature_idx: int) -> List[str]:
     return image_files
 
 def encode_image_to_base64(image_path: str) -> str:
-    """
-    Encodes an image file to a base64 string.
-
-    Args:
-        image_path (str): The file path to the image.
-
-    Returns:
-        str: The base64-encoded string of the image.
-    """
     with open(image_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return encoded_string
@@ -50,27 +37,19 @@ def construct_prompt(
     query_example: Dict,
     output_dir: str
 ) -> List[Dict]:
-    """
-    Constructs the prompt with text and individual images for GPT-4 evaluation.
-
-    Args:
-        feature1_idx (int): Index of the first feature.
-        feature2_idx (int): Index of the second feature.
-        query_example (Dict): The query example to evaluate.
-        output_dir (str): Directory where images are stored.
-
-    Returns:
-        List[Dict]: A list of content blocks containing text and images.
-    """
     content = []
 
     # Introduction Text
     intro_text = """
     In this task, we will provide you with information about two neurons and a single example. Your job is to accurately predict which of the two neurons is more likely to be activated by the given example.
 
-    Each neuron activates for a specific concept. To help you understand the concepts represented by the neurons, we are providing you with a set of examples that caused each neuron to activate. Each example shows a string fragment. Note that a neuron's activity may be influenced just as much by the surrounding context as the activating token, so make sure to pay attention to the full string fragments.
+    Each neuron activates for a specific concept. To help you understand the concepts represented by the neurons, we are providing you with a set of example images that caused each neuron to activate.
     """
     content.append({"type": "text", "text": intro_text})
+
+
+    neuron2_text = f"\nNeuron 1 Examples:\n"
+    content.append({"type": "text", "text": neuron2_text})
 
     # Neuron 1 Images
     neuron1_image_paths = load_image_paths(output_dir, feature1_idx)
@@ -86,6 +65,9 @@ def construct_prompt(
         }
         content.append(image_block)
 
+    neuron2_text = f"\nNeuron 2 Examples:\n"
+    content.append({"type": "text", "text": neuron2_text})
+    
     # Neuron 2 Images
     neuron2_image_paths = load_image_paths(output_dir, feature2_idx)
     for img_path in neuron2_image_paths:
@@ -120,7 +102,7 @@ def construct_prompt(
 
     # Final Instruction
     final_instruction = """
-    Now we will present you with an example. Based on your understanding of the neurons' functions, please predict which neuron is more likely to be activated by this example.
+    Now we will present you with another example image. Based on your understanding of the neurons' functions, please predict which neuron is more likely to be activated by this example.
 
     Which neuron is more likely to be activated by this example? Think step-by-step, but end your answer with "ANSWER: 1" or "ANSWER: 2." Please adhere to this format and do not write anything after your answer. If you're not confident, please still provide your best guess.
     """
@@ -129,19 +111,6 @@ def construct_prompt(
     return content
 
 def send_to_gpt4(content_blocks: List[Dict]) -> str:
-    """
-    Sends the prompt with images to GPT-4 and returns the response.
-
-    Args:
-        content_blocks (List[Dict]): A list of content blocks containing text and images.
-
-    Returns:
-        str: The response from GPT-4.
-    """
-    # Convert content_blocks to a single string with appropriate formatting
-    # Assuming GPT-4 can parse the structured content; otherwise, adjust accordingly
-    # Here, we'll concatenate text and image URLs in order
-
     prompt = ""
     for block in content_blocks:
         if block["type"] == "text":

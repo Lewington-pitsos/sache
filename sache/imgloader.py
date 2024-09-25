@@ -17,6 +17,9 @@ class FileDataset(IterableDataset):
                     if file_name.endswith('.jpg'):
                         yield os.path.join(folder_path, file_name)
 
+    def _get_image_data(self, image_path):
+        return read_image(image_path, mode=ImageReadMode.RGB)
+
     def _worker_iter(self, worker_id, num_workers):
         for img_path in self._get_image_paths():
             hash_val = int(hashlib.sha1(img_path.encode('utf-8')).hexdigest(), 16)
@@ -33,8 +36,6 @@ class FileDataset(IterableDataset):
             num_workers = worker_info.num_workers
             yield from self._worker_iter(worker_id, num_workers)
 
-    def _get_img_data(self, image_path):
-        return read_image(image_path, mode=ImageReadMode.RGB)
 
 class FilePathDataset(FileDataset):
     def _get_image_data(self, image_path):

@@ -231,6 +231,8 @@ def vit_generate(
         seed=42,
         log_every=100,
         bucket_name=None,
+        full_sequence=True,
+        num_workers=6,
     ):
 
     with open('.credentials.json') as f:
@@ -264,7 +266,7 @@ def vit_generate(
         })
 
         cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
         transformer.eval()
         means = None
@@ -272,7 +274,11 @@ def vit_generate(
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
-                activations = transformer.cls_activations(batch)
+                
+                if full_sequence:
+                    activations = transformer.all_activations(batch)
+                else:
+                    activations = transformer.cls_activations(batch)
 
                 if means is None:
                     means = activations.mean(dim=0).to('cpu')

@@ -50,7 +50,6 @@ def main(
         l1_coefficient = 2e-3,
         privilege_weighting = 1e-2,
         lr = 3e-4,
-        samples_per_file = 1024,
         tokens_till_latent_dies = 1_000_000,
         device = 'cuda',
         use_wandb=True,
@@ -129,7 +128,6 @@ def main(
             'n_feats': n_feats,
             'filter_ma': filter_ma,
             'n_experts': n_experts,
-            'samples_per_file': samples_per_file,
             'inner_bs': batch_size,
             'outer_bs': outer_batch_size,
             'learning_rate': lr,
@@ -148,7 +146,7 @@ def main(
         cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size)
 
         total_size = cache.metadata['bytes_per_file']
-        tokens_per_file = samples_per_file * seq_len
+        tokens_per_file = cache.samples_per_file * seq_len
 
         if shuffle:
             cache = ShufflingRCache(cache, batch_size=outer_batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)

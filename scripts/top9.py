@@ -35,10 +35,10 @@ def main():
         print(feature_idx)
         feature_values = all_latents[:, feature_idx]
 
-        topk_values, topk_indices = torch.topk(feature_values, num_top)
+        topk_values, topk_indices = torch.topk(feature_values, num_top + 1) # we want at least one extra
 
-        if topk_values.max() == 0:
-            print(f'Feature {feature_idx} has no activation')
+        if topk_values.min() <= 0:
+            print(f'Feature {feature_idx} has less than 9 associated images')
             continue
 
         # Get the corresponding file paths

@@ -1,3 +1,4 @@
+import time
 import torch
 import os
 import json
@@ -216,6 +217,7 @@ def main(n_evals=5):
 
     # Process each pair
     for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs, 1):
+        eval_start = time.time()
         print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
 
         # Load top9 indices for both features
@@ -279,8 +281,11 @@ def main(n_evals=5):
             "query_example": query_example,
             "gpt4_response": answer,
             'correct_index': query_index,
-            'correct': True if 'ANSWER: 1' in answer else False
+            'correct': True if 'ANSWER: 1' in answer else False,
+            'time_taken': time.time() - eval_start
         }
+
+        print('time_taken', evaluations[f"pair_{idx}"]['time_taken'])
 
         if idx >= n_evals:
             break
@@ -300,4 +305,4 @@ def main(n_evals=5):
     print("\nAll evaluations have been saved to 'gpt4_evaluations.json'.")
 
 if __name__ == '__main__':
-    main(n_evals=5)
+    main(n_evals=10)

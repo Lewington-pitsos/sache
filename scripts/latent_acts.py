@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sache.hookedvit import SpecifiedHookedViT
 from sache.imgloader import FilePathDataset
+from top9 import get_top9
 
 def main(
         sae_path,
@@ -62,7 +63,9 @@ def main(
                     torch.save(latents, f'{save_dir}/latents_{i}.pt')
                 break
 
-    print('finished')
+    print('finished generating latents')
+    latent_dir = 'cruft/650_latents'
+    get_top9(latent_dir, save_dir)
 
 
 if __name__ == '__main__':

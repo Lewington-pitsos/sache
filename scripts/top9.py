@@ -5,12 +5,11 @@ import glob
 from PIL import Image
 import matplotlib.pyplot as plt
 
-def main():
-    save_dir = 'cruft/ViT-45_000_000-relu-l1-3e-05_e5542e/latents-23757696/' 
-
-    output_dir = 'cruft/650_latents'
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def get_top9(latent_dir, save_dir):
+    # save_dir = 'cruft/ViT-45_000_000-relu-l1-3e-05_e5542e/latents-23757696/' 
+    # latent_dir = 'cruft/650_latents'
+    if not os.path.exists(latent_dir):
+        os.makedirs(latent_dir)
 
     file_path_files = sorted(glob.glob(os.path.join(save_dir, 'file_paths_*.json')))
     latent_files = sorted(glob.glob(os.path.join(save_dir, 'latents_*.pt')))
@@ -50,14 +49,21 @@ def main():
             'values': topk_values.tolist(),
             'file_paths': topk_file_paths
         }
-        with open(os.path.join(output_dir, f'feature_{feature_idx}_top9.json'), 'w') as f:
+        with open(os.path.join(latent_dir, f'feature_{feature_idx}_top9.json'), 'w') as f:
             json.dump(result, f)
 
         # Load the images
         images = []
-        for path in topk_file_paths:
+        for i, path in enumerate(topk_file_paths):
+
+            if i >= num_top:
+                break    
             img = Image.open(path).convert('RGB')
             images.append(img)
+
+            # save image
+            img.save(os.path.join(latent_dir, f'feature_{feature_idx}_top9_{i}.png'))
+
 
         # Plot the images in a 3x3 grid
         fig, axes = plt.subplots(3, 3, figsize=(9, 9))
@@ -65,10 +71,10 @@ def main():
             ax.imshow(img)
             ax.axis('off')
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'feature_{feature_idx}_top9.png'))
+        plt.savefig(os.path.join(latent_dir, f'feature_{feature_idx}_top9.png'))
         plt.close(fig)
 
-        print(f'Processed feature {feature_idx}')
+        print(f'saved images for feature {feature_idx}')
 
 if __name__ == '__main__':
-    main()
+    top9()

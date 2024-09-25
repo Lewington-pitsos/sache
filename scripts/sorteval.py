@@ -1,4 +1,5 @@
 import time
+from numpy import imag
 import torch
 import os
 import json
@@ -7,6 +8,7 @@ import random
 import openai
 from typing import List, Tuple, Dict
 import matplotlib.pyplot as plt
+import base64
 
 def load_topk_indices(output_dir: str, feature_idx: int) -> List[int]:
     json_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.json')
@@ -17,15 +19,15 @@ def load_topk_indices(output_dir: str, feature_idx: int) -> List[int]:
     return data.get('indices', [])
 
 def load_image_paths(output_dir: str, feature_idx: int) -> List[str]:
-    # Assuming that the top9 images are named in a consistent manner
-    # and are stored in the output_dir. Modify this function based on your actual image storage.
+    """
+    Loads the top 9 image paths for a given feature index.
+    Assumes images are named as 'feature_{feature_idx}_top9_{i}.png' where i is 1-9.
+    """
     image_files = sorted(glob.glob(os.path.join(output_dir, f'feature_{feature_idx}_top9_*.png')))
+    if len(image_files) != 9:
+        print(image_files)
+        raise ValueError(f"Expected 9 images for feature {feature_idx}, but found {len(image_files)}.")
     return image_files
-
-import json
-from typing import List, Dict
-
-import base64
 
 def encode_image_to_base64(image_path: str) -> str:
     """
@@ -41,7 +43,6 @@ def encode_image_to_base64(image_path: str) -> str:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return encoded_string
 
-
 def construct_prompt(
     feature1_idx: int,
     feature2_idx: int,
@@ -49,14 +50,13 @@ def construct_prompt(
     output_dir: str
 ) -> List[Dict]:
     """
-    Constructs the prompt with text and images for GPT-4 evaluation.
+    Constructs the prompt with text and individual images for GPT-4 evaluation.
 
     Args:
         feature1_idx (int): Index of the first feature.
         feature2_idx (int): Index of the second feature.
-        feature1_examples (List[Dict]): Top activating examples for feature 1.
-        feature2_examples (List[Dict]): Top activating examples for feature 2.
         query_example (Dict): The query example to evaluate.
+        output_dir (str): Directory where images are stored.
 
     Returns:
         List[Dict]: A list of content blocks containing text and images.
@@ -67,35 +67,37 @@ def construct_prompt(
     intro_text = """
     In this task, we will provide you with information about two neurons and a single example. Your job is to accurately predict which of the two neurons is more likely to be activated by the given example.
 
-    Each neuron activates for a specific concept. To help you understand the concepts represented by the neurons, we are providing you with a set of examples that caused each neuron to activate. Each example shows a string fragment and the top activating tokens with their activation score. The higher the activation value, the stronger the neuron fires. Note that a neuron's activity may be influenced just as much by the surrounding context as the activating token, so make sure to pay attention to the full string fragments.
+    Each neuron activates for a specific concept. To help you understand the concepts represented by the neurons, we are providing you with a set of examples that caused each neuron to activate. Each example shows a string fragment. Note that a neuron's activity may be influenced just as much by the surrounding context as the activating token, so make sure to pay attention to the full string fragments.
     """
     content.append({"type": "text", "text": intro_text})
 
     # Neuron 1 Images
-    image_path = os.path.join(output_dir, f'feature_{feature1_idx}_top9.png')
-    print("neuron 1 image path", image_path)
-    encoded_image = encode_image_to_base64(image_path)
-    image_block = {
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/jpeg;base64,{encoded_image}",
-            "detail": "high"
+    neuron1_image_paths = load_image_paths(output_dir, feature1_idx)
+    for img_path in neuron1_image_paths:
+        print(f"Neuron 1 image path: {img_path}")
+        encoded_image = encode_image_to_base64(img_path)
+        image_block = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{encoded_image}",
+                "detail": "low"
+            }
         }
-    }
-    content.append(image_block)
+        content.append(image_block)
 
-    # Neuron 2 Images, plot these into a 3x3 grid
-    image_path = os.path.join(output_dir, f'feature_{feature2_idx}_top9.png')
-    print("neuron 2 image path", image_path)
-    encoded_image = encode_image_to_base64(image_path)
-    image_block = {
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/jpeg;base64,{encoded_image}",
-            "detail": "high"
+    # Neuron 2 Images
+    neuron2_image_paths = load_image_paths(output_dir, feature2_idx)
+    for img_path in neuron2_image_paths:
+        print(f"Neuron 2 image path: {img_path}")
+        encoded_image = encode_image_to_base64(img_path)
+        image_block = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{encoded_image}",
+                "detail": "low"
+            }
         }
-    }
-    content.append(image_block)
+        content.append(image_block)
 
     # Specific Example Info
     specific_example_text = "\nSpecific Example:\n"
@@ -125,7 +127,6 @@ def construct_prompt(
 
     return content
 
-
 def send_to_gpt4(content_blocks: List[Dict]) -> str:
     """
     Sends the prompt with images to GPT-4 and returns the response.
@@ -136,14 +137,25 @@ def send_to_gpt4(content_blocks: List[Dict]) -> str:
     Returns:
         str: The response from GPT-4.
     """
+    # Convert content_blocks to a single string with appropriate formatting
+    # Assuming GPT-4 can parse the structured content; otherwise, adjust accordingly
+    # Here, we'll concatenate text and image URLs in order
+
+    prompt = ""
+    for block in content_blocks:
+        if block["type"] == "text":
+            prompt += block["text"] + "\n\n"
+        elif block["type"] == "image_url":
+            prompt += f"![Image]({block['image_url']['url']})\n\n"
+
     messages = [
         {"role": "system", "content": "You are ChatGPT, a large language model trained by OpenAI."},
-        {"role": "user", "content": content_blocks}
+        {"role": "user", "content": prompt}
     ]
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",  # Use the correct model that supports vision capabilities
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # Correct model name
             messages=messages,
             temperature=0,      # Set to 0 for deterministic responses
             max_tokens=750      # Adjust based on your needs
@@ -188,8 +200,10 @@ def main(n_evals=5):
 
     for feature_idx in range(num_features):
         json_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.json')
-        png_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.png')
-        if os.path.exists(json_file) and os.path.exists(png_file):
+        # Remove the check for grid image
+        # png_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.png')
+        # if os.path.exists(json_file) and os.path.exists(png_file):
+        if os.path.exists(json_file):
             features_with_activation.append(feature_idx)
             with open(json_file, 'r') as f:
                 data = json.load(f)
@@ -233,7 +247,7 @@ def main(n_evals=5):
             list(set(topk1_indices + topk2_indices))
         )
 
-        # exclude all indices which activate for feature 2
+        # Exclude all indices which activate for feature 2
         activated_indices_feature2 = (all_latents[:, feature2_idx] > 0).nonzero(as_tuple=True)[0]
         excluded_indices = torch.cat([excluded_indices, activated_indices_feature2])
 
@@ -256,8 +270,8 @@ def main(n_evals=5):
 
         # Prepare the query example
         query_example = {
-            "file_path": query_path,
-            "activation_score": float(all_latents[query_index, feature1_idx].item())
+            "file_path": query_path
+            # Activation scores removed as per request
             # Add more details if available
         }
 
@@ -285,18 +299,18 @@ def main(n_evals=5):
             'time_taken': time.time() - eval_start
         }
 
-        print('time_taken', evaluations[f"pair_{idx}"]['time_taken'])
+        print('time_taken', evaluations[f'pair_{idx}']['time_taken'])
 
         if idx >= n_evals:
             break
 
-    # print the average accuracy
-
+    # Calculate and print the average accuracy
     correct = 0
     for k, v in evaluations.items():
         if v['correct']:
             correct += 1
-    print(f"\nAverage accuracy: {correct /len(evaluations)}")
+    accuracy = correct / len(evaluations) if evaluations else 0
+    print(f"\nAverage accuracy: {accuracy}")
 
     # Save all evaluations to a JSON file
     with open('gpt4_evaluations.json', 'w') as f:

@@ -8,6 +8,7 @@ import random
 import openai
 from typing import List, Tuple, Dict
 import matplotlib.pyplot as plt
+import concurrent
 import base64
 
 def load_topk_indices(output_dir: str, feature_idx: int) -> List[int]:
@@ -166,7 +167,75 @@ def send_to_gpt4(content_blocks: List[Dict]) -> str:
         print(f"Error communicating with OpenAI API: {e}")
         return "Error"
 
-def main(n_evals=5):
+def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, output_dir, evaluations):
+    eval_start = time.time()
+    print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
+
+    # Load top9 indices for both features
+    topk1_indices = topk_indices_dict[feature1_idx]
+    topk2_indices = topk_indices_dict[feature2_idx]
+
+    # Get images that activate for feature1 (positive activations)
+    feature1_values = all_latents[:, feature1_idx]
+    activated_indices_feature1 = (feature1_values > 0).nonzero(as_tuple=True)[0]
+
+    # Exclude top 9 images from both features
+    excluded_indices = torch.tensor(
+        list(set(topk1_indices + topk2_indices))
+    )
+
+    # Exclude all indices which activate for feature 2
+    activated_indices_feature2 = (all_latents[:, feature2_idx] > 0).nonzero(as_tuple=True)[0]
+    excluded_indices = torch.cat([excluded_indices, activated_indices_feature2])
+
+    # Remaining images after exclusion
+    remaining_indices = torch.tensor(
+        [i.item() for i in activated_indices_feature1 if i.item() not in excluded_indices.tolist()]
+    )
+
+    print('Remaining indices:', remaining_indices.shape)
+
+    if remaining_indices.numel() == 0:
+        print("No remaining images after excluding top images.")
+        return None
+
+    # Select one query image at random
+    query_index = random.choice(remaining_indices.tolist())
+    query_path = all_file_paths[query_index]
+
+    print(f"Query image path: {query_path}")
+
+    # Prepare the query example
+    query_example = {
+        "file_path": query_path
+        # Activation scores removed as per request
+        # Add more details if available
+    }
+
+    # Construct the prompt
+    prompt = construct_prompt(
+        feature1_idx=feature1_idx,
+        feature2_idx=feature2_idx,
+        query_example=query_example,
+        output_dir=output_dir
+    )
+
+    # Send the prompt to GPT-4 and get the response
+    answer = send_to_gpt4(prompt)
+
+    print(f"GPT-4 Response: {answer}")
+
+    return {
+        "feature1_idx": feature1_idx,
+        "feature2_idx": feature2_idx,
+        "query_example": query_example,
+        "gpt4_response": answer,
+        'correct_index': query_index,
+        'correct': True if 'ANSWER: 1' in answer else False,
+        'time_taken': time.time() - eval_start
+    }
+
+def main(n_evals=5, n_workers=1):
     with open('.credentials.json', 'r') as f:
         credentials = json.load(f)
     
@@ -227,90 +296,49 @@ def main(n_evals=5):
             continue
         feature_pairs.add((a, b))
 
+    feature_pairs_list = list(feature_pairs)
     evaluations = {}  # Dictionary to store evaluations
 
-    # Process each pair
-    for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs, 1):
-        eval_start = time.time()
-        print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
+    if n_workers == 1:
+        for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs, 1):
+            evaluation = evaluate_pair(
+                idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, output_dir, evaluations
+            )
 
-        # Load top9 indices for both features
-        topk1_indices = topk_indices_dict[feature1_idx]
-        topk2_indices = topk_indices_dict[feature2_idx]
+            if evaluation is not None:
+                evaluations[f'pair_{idx}'] = evaluation
+                print(f"Correct: {evaluation['correct']}")
+                print('time_taken', evaluations[f'pair_{idx}']['time_taken'])
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
+            future_to_idx = {
+                executor.submit(
+                    evaluate_pair,
+                    idx=i+1,
+                    feature1_idx=pair[0],
+                    feature2_idx=pair[1],
+                    all_latents=all_latents,
+                    all_file_paths=all_file_paths,
+                    topk_indices_dict=topk_indices_dict,
+                    output_dir=output_dir
+                ): i+1 for i, pair in enumerate(feature_pairs_list)
+            }
 
-        # Get images that activate for feature1 (positive activations)
-        feature1_values = all_latents[:, feature1_idx]
-        activated_indices_feature1 = (feature1_values > 0).nonzero(as_tuple=True)[0]
-
-        # Exclude top 9 images from both features
-        excluded_indices = torch.tensor(
-            list(set(topk1_indices + topk2_indices))
-        )
-
-        # Exclude all indices which activate for feature 2
-        activated_indices_feature2 = (all_latents[:, feature2_idx] > 0).nonzero(as_tuple=True)[0]
-        excluded_indices = torch.cat([excluded_indices, activated_indices_feature2])
-
-        # Remaining images after exclusion
-        remaining_indices = torch.tensor(
-            [i.item() for i in activated_indices_feature1 if i.item() not in excluded_indices.tolist()]
-        )
-
-        print('Remaining indices:', remaining_indices.shape)
-
-        if remaining_indices.numel() == 0:
-            print("No remaining images after excluding top images.")
-            continue
-
-        # Select one query image at random
-        query_index = random.choice(remaining_indices.tolist())
-        query_path = all_file_paths[query_index]
-
-        print(f"Query image path: {query_path}")
-
-        # Prepare the query example
-        query_example = {
-            "file_path": query_path
-            # Activation scores removed as per request
-            # Add more details if available
-        }
-
-        # Construct the prompt
-        prompt = construct_prompt(
-            feature1_idx=feature1_idx,
-            feature2_idx=feature2_idx,
-            query_example=query_example,
-            output_dir=output_dir
-        )
-
-        # Send the prompt to GPT-4 and get the response
-        answer = send_to_gpt4(prompt)
-
-        print(f"GPT-4 Response: {answer}")
-
-        # Store the evaluation
-        evaluations[f"pair_{idx}"] = {
-            "feature1_idx": feature1_idx,
-            "feature2_idx": feature2_idx,
-            "query_example": query_example,
-            "gpt4_response": answer,
-            'correct_index': query_index,
-            'correct': True if 'ANSWER: 1' in answer else False,
-            'time_taken': time.time() - eval_start
-        }
-
-        print('time_taken', evaluations[f'pair_{idx}']['time_taken'])
-
-        if idx >= n_evals:
-            break
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    evaluation = future.result()
+                    if evaluation is not None:
+                        evaluations[f'pair_{idx}'] = evaluation
+                        print(f"Pair {idx} Correct: {evaluation['correct']}")
+                        print(f"Pair {idx} Time Taken: {evaluation['time_taken']:.2f} seconds")
+                except Exception as exc:
+                    print(f"Pair {idx} generated an exception: {exc}")
 
     # Calculate and print the average accuracy
-    correct = 0
-    for k, v in evaluations.items():
-        if v['correct']:
-            correct += 1
+    correct = sum(1 for v in evaluations.values() if v['correct'])
     accuracy = correct / len(evaluations) if evaluations else 0
-    print(f"\nAverage accuracy: {accuracy}")
+    print(f"\nAverage accuracy: {accuracy:.2f}")
 
     # Save all evaluations to a JSON file
     with open('gpt4_evaluations.json', 'w') as f:

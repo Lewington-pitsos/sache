@@ -36,7 +36,6 @@ class FileDataset(IterableDataset):
             num_workers = worker_info.num_workers
             yield from self._worker_iter(worker_id, num_workers)
 
-
 class FilePathDataset(FileDataset):
     def _get_image_data(self, image_path):
         return image_path, read_image(image_path, mode=ImageReadMode.RGB)

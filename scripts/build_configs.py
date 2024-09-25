@@ -1,21 +1,20 @@
 import json
 
 baseline =        {
-    "wandb_project": "vit-switch-sae-summse",
+    "wandb_project": "vit-switch",
     "n_feats": 65536,
-    "n_tokens": 24_000_000,
-    "batch_size": 4024 * 2,
+    "n_tokens": 3_000_000,
+    "batch_size": 1024,
     "k": 32,
-    "lr": 0.0008,
+    "lr": 0.0004,
     "l1_coefficient": 0.00008,
-    'data_name': "ViT-45_000_000",
+    'data_name': "ViT-3mil",
     "d_in": 1024,
-    "samples_per_file": 102_400,
     "seq_len": 1,
     "cache_buffer_size": 3,
     "n_cache_workers": 4,
     "batch_norm": False,
-    "save_every": 10_000_000
+    "save_every": 4_000_000
 }
 
 all_configs = []

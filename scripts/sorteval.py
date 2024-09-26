@@ -103,21 +103,13 @@ def construct_prompt(
     return content
 
 def send_to_gpt4(content_blocks: List[Dict]) -> str:
-    prompt = ""
-    for block in content_blocks:
-        if block["type"] == "text":
-            prompt += block["text"] + "\n\n"
-        elif block["type"] == "image_url":
-            prompt += f"![Image]({block['image_url']['url']})\n\n"
-
     messages = [
-        {"role": "system", "content": "You are ChatGPT, a large language model trained by OpenAI."},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": content_blocks}
     ]
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-4",  # Correct model name
+            model="gpt-4o",
             messages=messages,
             temperature=0,      # Set to 0 for deterministic responses
             max_tokens=750      # Adjust based on your needs
@@ -229,19 +221,17 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, 
         'time_taken': time.time() - eval_start
     }
 
-def main(
+def run_sort_eval(
         latent_dir,
-        image_dir,
         n_evals=5, 
         n_workers=1,
         num_features=650,
     ):
     with open('.credentials.json', 'r') as f:
         credentials = json.load(f)
-    
     openai.api_key = credentials['OPENAI_API_KEY']
+    image_dir = os.path.join(latent_dir, 'images')
 
-    # Load all the latents and file paths
     file_path_files = sorted(glob.glob(os.path.join(latent_dir, 'file_paths_*.json')))
     latent_files = sorted(glob.glob(os.path.join(latent_dir, 'latents_*.pt')))
 
@@ -258,15 +248,11 @@ def main(
 
     all_latents = torch.cat(all_latents, dim=0)  # Shape: (num_images, num_features)
 
-    # Identify features with activations (those with top9 files)
     features_with_activation = []
     topk_indices_dict = {}  # Store topk indices for each feature
 
     for feature_idx in range(num_features):
-        json_file = os.path.join(image_dir, f'feature_{feature_idx}_top9.json')
-        # Remove the check for grid image
-        # png_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.png')
-        # if os.path.exists(json_file) and os.path.exists(png_file):
+        json_file = os.path.join(image_dir, f'feature_{feature_idx}/{feature_idx}_top9.json')
         if os.path.exists(json_file):
             features_with_activation.append(feature_idx)
             with open(json_file, 'r') as f:
@@ -330,19 +316,17 @@ def main(
                 except Exception as exc:
                     print(f"Pair {idx} generated an exception: {exc}")
 
-    # Calculate and print the average accuracy
     correct = sum(1 for v in evaluations.values() if v['correct'])
     accuracy = correct / len(evaluations) if evaluations else 0
     print(f"\nAverage accuracy: {accuracy:.2f}")
 
-    with open(os.path.join(image_dir, '/gpt4_evaluations.json'), 'w') as f:
+    with open(os.path.join(image_dir, 'gpt4_evaluations.json'), 'w') as f:
         json.dump(evaluations, f, indent=2)
 
     print("\nAll evaluations have been saved to 'gpt4_evaluations.json'.")
 
 if __name__ == '__main__':
-    main(
-        latent_dir = 'cruft/ViT-3mil-topkk-16-experts-None_f75c7d/latents-2969600',
-        image_dir = 'cruft/650_latents',
+    run_sort_eval(
+        latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
         n_evals=2,
     )

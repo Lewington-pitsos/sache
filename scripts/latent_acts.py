@@ -13,10 +13,9 @@ from top9 import get_top9
 
 def main(
         sae_path,
-        latent_dir,
         n_activations=250_000,
         save_every=10,
-        batch_size=2048 * 2,
+        batch_size=2048,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
         hook_name="resid",
         layer=-2,
@@ -31,10 +30,10 @@ def main(
     sae = torch.load(sae_path)
     
     n_steps = sae_path.split('/')[-1].split('.')[0]
-    save_dir = "/".join(sae_path.split('/')[:-1]) + f'/latents-{n_steps}'
+    latent_dir = "/".join(sae_path.split('/')[:-1]) + f'/latents-{n_steps}'
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    if not os.path.exists(latent_dir):
+        os.makedirs(latent_dir)
 
     latents = None
     file_paths = []
@@ -51,26 +50,24 @@ def main(
             file_paths.extend(paths)
 
             if i > 0 and i % save_every == 0:
-                with open(f'{save_dir}/file_paths_{i}.json', 'w') as f:
+                with open(f'{latent_dir}/file_paths_{i}.json', 'w') as f:
                     json.dump(file_paths, f)
-                torch.save(latents, f'{save_dir}/latents_{i}.pt')
+                torch.save(latents, f'{latent_dir}/latents_{i}.pt')
                 file_paths = []
                 latents = None
 
             if i * batch_size > n_activations:
                 if len(file_paths) > 0:
-                    with open(f'{save_dir}/file_paths_{i}.json', 'w') as f:
+                    with open(f'{latent_dir}/file_paths_{i}.json', 'w') as f:
                         json.dump(file_paths, f)
-                    torch.save(latents, f'{save_dir}/latents_{i}.pt')
+                    torch.save(latents, f'{latent_dir}/latents_{i}.pt')
                 break
 
-    print('finished generating latents')
-    get_top9(latent_dir, save_dir)
+    get_top9(latent_dir)
 
 
 if __name__ == '__main__':
     main(
         sae_path='cruft/ViT-3mil-topkk-32-experts-None_1aaa89/2969600.pt',
         n_activations=250_000,
-        latent_dir='cruft/650_latents-k32-topk',
     )

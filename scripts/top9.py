@@ -5,12 +5,16 @@ import glob
 from PIL import Image
 import matplotlib.pyplot as plt
 
-def get_top9(latent_dir, save_dir):
-    if not os.path.exists(latent_dir):
-        os.makedirs(latent_dir)
+def get_top9(latent_dir):
+    file_path_files = sorted(glob.glob(os.path.join(latent_dir, 'file_paths_*.json')))
+    latent_files = sorted(glob.glob(os.path.join(latent_dir, 'latents_*.pt')))
 
-    file_path_files = sorted(glob.glob(os.path.join(save_dir, 'file_paths_*.json')))
-    latent_files = sorted(glob.glob(os.path.join(save_dir, 'latents_*.pt')))
+    image_dir = os.path.join(latent_dir, 'images')
+
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)
+    print('saving images to:', image_dir)
+
 
     all_file_paths = []
     all_latents = []
@@ -48,12 +52,12 @@ def get_top9(latent_dir, save_dir):
             'file_paths': topk_file_paths
         }
 
-        feature_dir = os.path.join(latent_dir, f'feature_{feature_idx}')
+        feature_dir = os.path.join(image_dir, f'feature_{feature_idx}')
 
         if not os.path.exists(feature_dir):
             os.makedirs(feature_dir)
 
-        with open(os.path.join(latent_dir, feature_dir, f'{feature_idx}_top9.json'), 'w') as f:
+        with open(os.path.join(feature_dir, f'{feature_idx}_top9.json'), 'w') as f:
             json.dump(result, f)
 
         # Load the images
@@ -66,7 +70,7 @@ def get_top9(latent_dir, save_dir):
             images.append(img)
 
             # save image
-            img.save(os.path.join(latent_dir, feature_dir, f'{feature_idx}_top9_{i}.png'))
+            img.save(os.path.join(feature_dir, f'{feature_idx}_top9_{i}.png'))
 
 
         # Plot the images in a 3x3 grid
@@ -75,8 +79,10 @@ def get_top9(latent_dir, save_dir):
             ax.imshow(img)
             ax.axis('off')
         plt.tight_layout()
-        plt.savefig(os.path.join(latent_dir, feature_dir, f'{feature_idx}_grid.png'))
+        plt.savefig(os.path.join(feature_dir, f'{feature_idx}_grid.png'))
         plt.close(fig)
 
         print(f'saved images for feature {feature_idx}')
 
+if __name__ == '__main__':
+    get_top9('cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600')

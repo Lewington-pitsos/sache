@@ -150,11 +150,13 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
     selected_feature_number = random.choice([1, 2])
     if selected_feature_number == 1:
         selected_feature_idx = feature1_idx
+        correct_index = feature1_idx
         data = load_feature_data(feature1_idx, image_dir)
         other_data = load_feature_data(feature2_idx, image_dir)
         print(f"Selected Feature 1 (Index: {selected_feature_idx}) for querying.")
     else:
         selected_feature_idx = feature2_idx
+        correct_index = feature2_idx
         data = load_feature_data(feature2_idx, image_dir)
         other_data = load_feature_data(feature1_idx, image_dir)
         print(f"Selected Feature 2 (Index: {selected_feature_idx}) for querying.")
@@ -163,11 +165,11 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
     topk_selected = data.get('indices', [])
     topk_other = other_data.get('indices', [])
 
-    activated_indices_selected = data.get('indices_gt_zero', [])
+    activated_indices_selected = torch.tensor(data.get('indices_gt_zero', []))
 
     # Exclude topk images from both features
     excluded_indices = torch.tensor(list(set(topk_selected + topk_other)))
-    activated_indices_other = other_data.get('indices_gt_zero', [])
+    activated_indices_other = torch.tensor(other_data.get('indices_gt_zero', []))
     excluded_indices = torch.cat([excluded_indices, activated_indices_other])
 
     # Remaining images after exclusion
@@ -220,7 +222,7 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
         "selected_feature_number": selected_feature_number,  # Indicates which feature was selected
         "query_example": query_path,
         "gpt4_response": answer,
-        'correct_index': query_index,
+        'correct_index': correct_index,
         'correct': is_correct,
         'time_taken': time.time() - eval_start
     }
@@ -230,8 +232,12 @@ def run_sort_eval(
         n_evals=5, 
         n_workers=1,
         num_features=650,
-        test = False
+        test = False,
+        seed=0
     ):
+
+    random.seed(seed)
+
     start = time.time()
     with open('.credentials.json', 'r') as f:
         credentials = json.load(f)
@@ -316,16 +322,19 @@ def run_sort_eval(
                     print(f"Pair {idx} generated an exception: {exc}")
 
     correct = sum(1 for v in evaluations.values() if v['correct'])
-    accuracy = correct / len(evaluations) if evaluations else 0
-    print(f"\nAverage accuracy: {accuracy:.2f}")
+    mean_correctness = correct / len(evaluations) if evaluations else 0
+    print(f"\nAverage accuracy: {mean_correctness:.2f}")
 
     end = time.time()
     print(f"\nTotal time taken: {end - start:.2f} seconds")
 
+
+
     evaluations = {
         'evaluations': evaluations,
-        'accuracy': accuracy,
-        'total_time': end - start
+        'mean_correctness': mean_correctness,
+        'total_time': end - start,
+        'all_pairs': feature_pairs_list
     }
 
     with open(os.path.join(image_dir, 'gpt4_evaluations.json'), 'w') as f:
@@ -336,7 +345,8 @@ def run_sort_eval(
 if __name__ == '__main__':
     run_sort_eval(
         latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
-        n_evals=2,
-        n_workers=1,
-        test=True
+        n_evals=25,
+        n_workers=4,
+        test=True,
+        seed=0
     )

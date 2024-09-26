@@ -6,8 +6,6 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 def get_top9(latent_dir, save_dir):
-    # save_dir = 'cruft/ViT-45_000_000-relu-l1-3e-05_e5542e/latents-23757696/' 
-    # latent_dir = 'cruft/650_latents'
     if not os.path.exists(latent_dir):
         os.makedirs(latent_dir)
 
@@ -49,7 +47,13 @@ def get_top9(latent_dir, save_dir):
             'values': topk_values.tolist(),
             'file_paths': topk_file_paths
         }
-        with open(os.path.join(latent_dir, f'feature_{feature_idx}_top9.json'), 'w') as f:
+
+        feature_dir = os.path.join(latent_dir, f'feature_{feature_idx}')
+
+        if not os.path.exists(feature_dir):
+            os.makedirs(feature_dir)
+
+        with open(os.path.join(latent_dir, feature_dir, f'{feature_idx}_top9.json'), 'w') as f:
             json.dump(result, f)
 
         # Load the images
@@ -62,7 +66,7 @@ def get_top9(latent_dir, save_dir):
             images.append(img)
 
             # save image
-            img.save(os.path.join(latent_dir, f'feature_{feature_idx}_top9_{i}.png'))
+            img.save(os.path.join(latent_dir, feature_dir, f'{feature_idx}_top9_{i}.png'))
 
 
         # Plot the images in a 3x3 grid
@@ -71,10 +75,8 @@ def get_top9(latent_dir, save_dir):
             ax.imshow(img)
             ax.axis('off')
         plt.tight_layout()
-        plt.savefig(os.path.join(latent_dir, f'feature_{feature_idx}_top9.png'))
+        plt.savefig(os.path.join(latent_dir, feature_dir, f'{feature_idx}_grid.png'))
         plt.close(fig)
 
         print(f'saved images for feature {feature_idx}')
 
-if __name__ == '__main__':
-    top9()

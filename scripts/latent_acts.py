@@ -13,9 +13,10 @@ from top9 import get_top9
 
 def main(
         sae_path,
+        latent_dir,
         n_activations=250_000,
-        save_every=20 * 16,
-        batch_size=256,
+        save_every=10,
+        batch_size=2048 * 2,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
         hook_name="resid",
         layer=-2,
@@ -64,12 +65,12 @@ def main(
                 break
 
     print('finished generating latents')
-    latent_dir = 'cruft/650_latents'
     get_top9(latent_dir, save_dir)
 
 
 if __name__ == '__main__':
     main(
-        sae_path='cruft/ViT-45_000_000-relu-l1-3e-05_e5542e/23757696.pt',
-        n_activations=10_000,
+        sae_path='cruft/ViT-3mil-topkk-32-experts-None_1aaa89/2969600.pt',
+        n_activations=250_000,
+        latent_dir='cruft/650_latents-k32-topk',
     )

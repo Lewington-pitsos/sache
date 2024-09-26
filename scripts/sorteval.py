@@ -1,5 +1,4 @@
 import time
-from numpy import imag
 import torch
 import os
 import json
@@ -32,10 +31,9 @@ def encode_image_to_base64(image_path: str) -> str:
     return encoded_string
 
 def construct_prompt(
-    feature1_idx: int,
-    feature2_idx: int,
-    query_example: Dict,
-    output_dir: str
+    f1grid_file: str,
+    f2grid_file: str,
+    query_example_path: str,
 ) -> List[Dict]:
     content = []
 
@@ -52,43 +50,37 @@ def construct_prompt(
     content.append({"type": "text", "text": neuron2_text})
 
     # Neuron 1 Images
-    neuron1_image_paths = load_image_paths(output_dir, feature1_idx)
-    for img_path in neuron1_image_paths:
-        print(f"Neuron 1 image path: {img_path}")
-        encoded_image = encode_image_to_base64(img_path)
-        image_block = {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{encoded_image}",
-                "detail": "low"
-            }
+    print(f"Neuron 1 image path: {f1grid_file}")
+    encoded_image = encode_image_to_base64(f1grid_file)
+    image_block = {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:image/jpeg;base64,{encoded_image}",
+            "detail": "high"
         }
-        content.append(image_block)
+    }
+    content.append(image_block)
 
     neuron2_text = f"\nNeuron 2 Examples:\n"
     content.append({"type": "text", "text": neuron2_text})
     
-    # Neuron 2 Images
-    neuron2_image_paths = load_image_paths(output_dir, feature2_idx)
-    for img_path in neuron2_image_paths:
-        print(f"Neuron 2 image path: {img_path}")
-        encoded_image = encode_image_to_base64(img_path)
-        image_block = {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{encoded_image}",
-                "detail": "low"
-            }
+    print(f"Neuron 2 image path: {f2grid_file}")
+    encoded_image = encode_image_to_base64(f2grid_file)
+    image_block = {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:image/jpeg;base64,{encoded_image}",
+            "detail": "high"
         }
-        content.append(image_block)
+    }
+    content.append(image_block)
 
     # Specific Example Info
     specific_example_text = "\nSpecific Example:\n"
-    specific_example_text += json.dumps(query_example, indent=2)
     content.append({"type": "text", "text": specific_example_text})
 
     # Specific Example Image
-    query_image_path = query_example.get("file_path")
+    query_image_path = query_example_path
     if query_image_path and os.path.exists(query_image_path):
         encoded_query_image = encode_image_to_base64(query_image_path)
         query_image_block = {
@@ -124,7 +116,7 @@ def send_to_gpt4(content_blocks: List[Dict]) -> str:
     ]
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-4",  # Correct model name
             messages=messages,
             temperature=0,      # Set to 0 for deterministic responses
@@ -136,30 +128,55 @@ def send_to_gpt4(content_blocks: List[Dict]) -> str:
         print(f"Error communicating with OpenAI API: {e}")
         return "Error"
 
-def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, output_dir, evaluations):
+def save_to_test_dir(test_dir, f1grid_file, f2grid_file, feature1_idx, feature2_idx, query_path):
+    if not os.path.exists(test_dir):
+        os.makedirs(test_dir)
+
+
+    this_test_dir = os.path.join(test_dir, f'test_{feature1_idx}-{feature2_idx}')
+    if not os.path.exists(os.path.join(test_dir, this_test_dir)):
+        os.makedirs(os.path.join(test_dir, this_test_dir))
+
+    os.symlink(f1grid_file, os.path.join(test_dir, this_test_dir, f'{feature1_idx}_grid.png'))
+    os.symlink(f2grid_file, os.path.join(test_dir, this_test_dir, f'{feature2_idx}_grid.png'))
+    os.symlink(query_path, os.path.join(test_dir, this_test_dir, 'query.png'))
+
+def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, top9dir, test_dir=None):
     eval_start = time.time()
     print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
 
-    # Load top9 indices for both features
-    topk1_indices = topk_indices_dict[feature1_idx]
-    topk2_indices = topk_indices_dict[feature2_idx]
+    # Randomly select which feature to use for querying: 1 or 2
+    selected_feature_number = random.choice([1, 2])
+    if selected_feature_number == 1:
+        selected_feature_idx = feature1_idx
+        other_feature_idx = feature2_idx
+        print(f"Selected Feature 1 (Index: {selected_feature_idx}) for querying.")
+    else:
+        selected_feature_idx = feature2_idx
+        other_feature_idx = feature1_idx
+        print(f"Selected Feature 2 (Index: {selected_feature_idx}) for querying.")
 
-    # Get images that activate for feature1 (positive activations)
-    feature1_values = all_latents[:, feature1_idx]
-    activated_indices_feature1 = (feature1_values > 0).nonzero(as_tuple=True)[0]
+    # Load topk indices for both features
+    topk_selected = topk_indices_dict[selected_feature_idx]
+    topk_other = topk_indices_dict[other_feature_idx]
 
-    # Exclude top 9 images from both features
+    # Get images that activate for the selected feature (positive activations)
+    selected_feature_values = all_latents[:, selected_feature_idx]
+    activated_indices_selected = (selected_feature_values > 0).nonzero(as_tuple=True)[0]
+
+    # Exclude topk images from both features
     excluded_indices = torch.tensor(
-        list(set(topk1_indices + topk2_indices))
+        list(set(topk_selected + topk_other))
     )
 
-    # Exclude all indices which activate for feature 2
-    activated_indices_feature2 = (all_latents[:, feature2_idx] > 0).nonzero(as_tuple=True)[0]
-    excluded_indices = torch.cat([excluded_indices, activated_indices_feature2])
+    # Exclude all indices which activate for the other feature
+    other_feature_values = all_latents[:, other_feature_idx]
+    activated_indices_other = (other_feature_values > 0).nonzero(as_tuple=True)[0]
+    excluded_indices = torch.cat([excluded_indices, activated_indices_other])
 
     # Remaining images after exclusion
     remaining_indices = torch.tensor(
-        [i.item() for i in activated_indices_feature1 if i.item() not in excluded_indices.tolist()]
+        [i.item() for i in activated_indices_selected if i.item() not in excluded_indices.tolist()]
     )
 
     print('Remaining indices:', remaining_indices.shape)
@@ -168,54 +185,65 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, 
         print("No remaining images after excluding top images.")
         return None
 
-    # Select one query image at random
+    # Select one query image at random from the selected feature
     query_index = random.choice(remaining_indices.tolist())
     query_path = all_file_paths[query_index]
 
     print(f"Query image path: {query_path}")
 
     # Prepare the query example
-    query_example = {
-        "file_path": query_path
-        # Activation scores removed as per request
-        # Add more details if available
-    }
-
+    f1grid_file = os.path.join(top9dir, f'feature_{feature1_idx}', f'{feature1_idx}_grid.png')
+    f2grid_file = os.path.join(top9dir, f'feature_{feature2_idx}', f'{feature2_idx}_grid.png')
+    
     # Construct the prompt
     prompt = construct_prompt(
-        feature1_idx=feature1_idx,
-        feature2_idx=feature2_idx,
-        query_example=query_example,
-        output_dir=output_dir
+        f1grid_file=f1grid_file,
+        f2grid_file=f2grid_file,
+        query_example_path=query_path,
     )
+
+    if test_dir is not None:
+        save_to_test_dir(test_dir, f1grid_file, f2grid_file, feature1_idx, feature2_idx, query_path)
 
     # Send the prompt to GPT-4 and get the response
     answer = send_to_gpt4(prompt)
 
     print(f"GPT-4 Response: {answer}")
 
+    # Determine if the GPT-4 answer is correct
+    if selected_feature_number == 1:
+        correct_answer = 'ANSWER: 1'
+    else:
+        correct_answer = 'ANSWER: 2'
+
+    is_correct = correct_answer in answer.upper()
+
     return {
         "feature1_idx": feature1_idx,
         "feature2_idx": feature2_idx,
-        "query_example": query_example,
+        "selected_feature_number": selected_feature_number,  # Indicates which feature was selected
+        "query_example": query_path,
         "gpt4_response": answer,
         'correct_index': query_index,
-        'correct': True if 'ANSWER: 1' in answer else False,
+        'correct': is_correct,
         'time_taken': time.time() - eval_start
     }
 
-def main(n_evals=5, n_workers=1):
+def main(
+        latent_dir,
+        image_dir,
+        n_evals=5, 
+        n_workers=1,
+        num_features=650,
+    ):
     with open('.credentials.json', 'r') as f:
         credentials = json.load(f)
     
     openai.api_key = credentials['OPENAI_API_KEY']
 
-    save_dir = 'cruft/ViT-45_000_000-relu-l1-3e-05_e5542e/latents-23757696/'
-    output_dir = 'cruft/650_latents'
-
     # Load all the latents and file paths
-    file_path_files = sorted(glob.glob(os.path.join(save_dir, 'file_paths_*.json')))
-    latent_files = sorted(glob.glob(os.path.join(save_dir, 'latents_*.pt')))
+    file_path_files = sorted(glob.glob(os.path.join(latent_dir, 'file_paths_*.json')))
+    latent_files = sorted(glob.glob(os.path.join(latent_dir, 'latents_*.pt')))
 
     all_file_paths = []
     all_latents = []
@@ -230,14 +258,12 @@ def main(n_evals=5, n_workers=1):
 
     all_latents = torch.cat(all_latents, dim=0)  # Shape: (num_images, num_features)
 
-    num_features = 650
-
     # Identify features with activations (those with top9 files)
     features_with_activation = []
     topk_indices_dict = {}  # Store topk indices for each feature
 
     for feature_idx in range(num_features):
-        json_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.json')
+        json_file = os.path.join(image_dir, f'feature_{feature_idx}_top9.json')
         # Remove the check for grid image
         # png_file = os.path.join(output_dir, f'feature_{feature_idx}_top9.png')
         # if os.path.exists(json_file) and os.path.exists(png_file):
@@ -268,10 +294,10 @@ def main(n_evals=5, n_workers=1):
     feature_pairs_list = list(feature_pairs)
     evaluations = {}  # Dictionary to store evaluations
 
-    if n_workers == 1:
+    if n_workers <= 1:
         for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs, 1):
             evaluation = evaluate_pair(
-                idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, output_dir, evaluations
+                idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, image_dir
             )
 
             if evaluation is not None:
@@ -289,7 +315,7 @@ def main(n_evals=5, n_workers=1):
                     all_latents=all_latents,
                     all_file_paths=all_file_paths,
                     topk_indices_dict=topk_indices_dict,
-                    output_dir=output_dir
+                    image_dir=image_dir
                 ): i+1 for i, pair in enumerate(feature_pairs_list)
             }
 
@@ -309,11 +335,14 @@ def main(n_evals=5, n_workers=1):
     accuracy = correct / len(evaluations) if evaluations else 0
     print(f"\nAverage accuracy: {accuracy:.2f}")
 
-    # Save all evaluations to a JSON file
-    with open('gpt4_evaluations.json', 'w') as f:
+    with open(os.path.join(image_dir, '/gpt4_evaluations.json'), 'w') as f:
         json.dump(evaluations, f, indent=2)
 
     print("\nAll evaluations have been saved to 'gpt4_evaluations.json'.")
 
 if __name__ == '__main__':
-    main(n_evals=10)
+    main(
+        latent_dir = 'cruft/ViT-3mil-topkk-16-experts-None_f75c7d/latents-2969600',
+        image_dir = 'cruft/650_latents',
+        n_evals=2,
+    )

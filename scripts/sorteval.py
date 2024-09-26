@@ -143,6 +143,21 @@ def load_feature_data(feature_idx, image_dir):
 
     return data
 
+def _evaluate_pair(*args, **kwargs):
+    tries = 5
+
+    for i in range(tries):
+        try:
+            return evaluate_pair(*args, **kwargs)
+        except Exception as e:
+            print(f"Error: {e}")
+            print(f"Retrying... ({i + 1}/{tries})")
+            time.sleep(10 )
+
+    print(f"Pair {args[0]} could not be evaluated.")
+
+    return None
+
 def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, test_dir=None):
     eval_start = time.time()
     print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
@@ -206,8 +221,6 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
     # Send the prompt to GPT-4 and get the response
     answer = send_to_gpt4(prompt)
 
-    print(f"GPT-4 Response: {answer}")
-
     # Determine if the GPT-4 answer is correct
     if selected_feature_number == 1:
         correct_answer = 'ANSWER: 1'
@@ -219,8 +232,8 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
     return {
         "feature1_idx": feature1_idx,
         "feature2_idx": feature2_idx,
-        "selected_feature_number": selected_feature_number,  # Indicates which feature was selected
         "query_example": query_path,
+        "predicted_index": selected_feature_idx,
         "gpt4_response": answer,
         'correct_index': correct_index,
         'correct': is_correct,
@@ -290,17 +303,19 @@ def run_sort_eval(
 
     if n_workers <= 1:
         for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs):
-            evaluation = evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, test_dir=test_dir)
+            evaluation = _evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, test_dir=test_dir)
 
             if evaluation is not None:
                 evaluations[f'pair_{idx}'] = evaluation
                 print(f"Correct: {evaluation['correct']}")
                 print('time_taken', evaluations[f'pair_{idx}']['time_taken'])
+            else:
+                print(f"Pair {idx} could not be evaluated.")
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_idx = {
                 executor.submit(
-                    evaluate_pair,
+                    _evaluate_pair,
                     idx=i,
                     feature1_idx=pair[0],
                     feature2_idx=pair[1],
@@ -343,10 +358,19 @@ def run_sort_eval(
     print("\nAll evaluations have been saved to 'gpt4_evaluations.json'.")
 
 if __name__ == '__main__':
+    # run_sort_eval(
+    #     latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
+    #     n_evals=250,
+    #     n_workers=4,
+    #     test=True,
+    #     seed=0
+    # )
+
+
     run_sort_eval(
-        latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
-        n_evals=25,
-        n_workers=4,
+        latent_dir = 'cruft/ViT-3mil-topkk-8-experts-32_703f58/latents-2969600',
+        n_evals=250,
+        n_workers=2,
         test=True,
         seed=0
     )

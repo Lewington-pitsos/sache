@@ -43,6 +43,8 @@ def main(
             activations = transformer.cls_activations(batch)
 
             latent = sae.forward_descriptive(activations)['latent'].detach().cpu()
+            latent = latent[:, :save_up_to]
+
             if latents is None:
                 latents = latent
             else:
@@ -50,7 +52,6 @@ def main(
 
             file_paths.extend(paths)
 
-            latents = latents[:, :save_up_to]
 
             if i > 0 and i % save_every == 0:
                 with open(f'{latent_dir}/file_paths_{i}.json', 'w') as f:
@@ -70,7 +71,45 @@ def main(
 
 
 if __name__ == '__main__':
+    # main(
+    #     sae_path='cruft/ViT-3mil-topkk-32-experts-None_1aaa89/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+    # main( 
+    #     sae_path='cruft/ViT-3mil-topkk-8-experts-32_703f58/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+    # main(
+    #     sae_path='cruft/ViT-3mil-relu-l1-9e-05_f0477c/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
     main(
-        sae_path='cruft/ViT-3mil-topkk-32-experts-None_1aaa89/2969600.pt',
+        sae_path='cruft/ViT-3mil-topkk-32-experts-8_5d073c/2969600.pt',
         n_activations=250_000,
     )
+
+    # main(
+    #     sae_path='cruft/ViT-3mil-topkk-16-experts-8_62b60e/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+
+    # main(
+    #     sae_path='cruft/ViT-3mil-topkk-8-experts-8_fa5f99/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+
+    # main(
+    #     sae_path='cruft/ViT-3mil-topkk-64-experts-8_3e556f/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+
+
+    
+
+    

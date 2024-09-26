@@ -13,9 +13,10 @@ from top9 import get_top9
 
 def main(
         sae_path,
-        n_activations=250_000,
+        n_activations=500_000,
         save_every=10,
         batch_size=2048,
+        save_up_to=660,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
         hook_name="resid",
         layer=-2,
@@ -48,6 +49,8 @@ def main(
                 latents = torch.cat((latents, latent), dim=0)
 
             file_paths.extend(paths)
+
+            latents = latents[:, :save_up_to]
 
             if i > 0 and i % save_every == 0:
                 with open(f'{latent_dir}/file_paths_{i}.json', 'w') as f:

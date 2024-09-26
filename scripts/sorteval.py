@@ -124,46 +124,50 @@ def save_to_test_dir(test_dir, f1grid_file, f2grid_file, feature1_idx, feature2_
     if not os.path.exists(test_dir):
         os.makedirs(test_dir)
 
-
     this_test_dir = os.path.join(test_dir, f'test_{feature1_idx}-{feature2_idx}')
-    if not os.path.exists(os.path.join(test_dir, this_test_dir)):
-        os.makedirs(os.path.join(test_dir, this_test_dir))
+    if not os.path.exists(this_test_dir):
+        os.makedirs(this_test_dir)
 
-    os.symlink(f1grid_file, os.path.join(test_dir, this_test_dir, f'{feature1_idx}_grid.png'))
-    os.symlink(f2grid_file, os.path.join(test_dir, this_test_dir, f'{feature2_idx}_grid.png'))
-    os.symlink(query_path, os.path.join(test_dir, this_test_dir, 'query.png'))
+    f1grid_file_new = os.path.join(this_test_dir, f'{feature1_idx}_grid.png')
+    f2grid_file_new = os.path.join(this_test_dir, f'{feature2_idx}_grid.png')
+    query_path_new = os.path.join(this_test_dir, 'query.png')
 
-def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, top9dir, test_dir=None):
+    os.system(f'cp {f1grid_file} {f1grid_file_new}')
+    os.system(f'cp {f2grid_file} {f2grid_file_new}')
+    os.system(f'cp {query_path} {query_path_new}')
+
+def load_feature_data(feature_idx, image_dir):
+    json_file = os.path.join(image_dir, f'feature_{feature_idx}/{feature_idx}_top9.json')
+    with open(json_file, 'r') as f:
+        data = json.load(f)
+
+    return data
+
+def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, test_dir=None):
     eval_start = time.time()
     print(f"\nProcessing pair {idx}: Features {feature1_idx} and {feature2_idx}")
 
-    # Randomly select which feature to use for querying: 1 or 2
     selected_feature_number = random.choice([1, 2])
     if selected_feature_number == 1:
         selected_feature_idx = feature1_idx
-        other_feature_idx = feature2_idx
+        data = load_feature_data(feature1_idx, image_dir)
+        other_data = load_feature_data(feature2_idx, image_dir)
         print(f"Selected Feature 1 (Index: {selected_feature_idx}) for querying.")
     else:
         selected_feature_idx = feature2_idx
-        other_feature_idx = feature1_idx
+        data = load_feature_data(feature2_idx, image_dir)
+        other_data = load_feature_data(feature1_idx, image_dir)
         print(f"Selected Feature 2 (Index: {selected_feature_idx}) for querying.")
 
     # Load topk indices for both features
-    topk_selected = topk_indices_dict[selected_feature_idx]
-    topk_other = topk_indices_dict[other_feature_idx]
+    topk_selected = data.get('indices', [])
+    topk_other = other_data.get('indices', [])
 
-    # Get images that activate for the selected feature (positive activations)
-    selected_feature_values = all_latents[:, selected_feature_idx]
-    activated_indices_selected = (selected_feature_values > 0).nonzero(as_tuple=True)[0]
+    activated_indices_selected = data.get('indices_gt_zero', [])
 
     # Exclude topk images from both features
-    excluded_indices = torch.tensor(
-        list(set(topk_selected + topk_other))
-    )
-
-    # Exclude all indices which activate for the other feature
-    other_feature_values = all_latents[:, other_feature_idx]
-    activated_indices_other = (other_feature_values > 0).nonzero(as_tuple=True)[0]
+    excluded_indices = torch.tensor(list(set(topk_selected + topk_other)))
+    activated_indices_other = other_data.get('indices_gt_zero', [])
     excluded_indices = torch.cat([excluded_indices, activated_indices_other])
 
     # Remaining images after exclusion
@@ -184,8 +188,8 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_latents, all_file_paths, 
     print(f"Query image path: {query_path}")
 
     # Prepare the query example
-    f1grid_file = os.path.join(top9dir, f'feature_{feature1_idx}', f'{feature1_idx}_grid.png')
-    f2grid_file = os.path.join(top9dir, f'feature_{feature2_idx}', f'{feature2_idx}_grid.png')
+    f1grid_file = os.path.join(image_dir, f'feature_{feature1_idx}', f'{feature1_idx}_grid.png')
+    f2grid_file = os.path.join(image_dir, f'feature_{feature2_idx}', f'{feature2_idx}_grid.png')
     
     # Construct the prompt
     prompt = construct_prompt(
@@ -226,30 +230,29 @@ def run_sort_eval(
         n_evals=5, 
         n_workers=1,
         num_features=650,
+        test = False
     ):
+    start = time.time()
     with open('.credentials.json', 'r') as f:
         credentials = json.load(f)
     openai.api_key = credentials['OPENAI_API_KEY']
     image_dir = os.path.join(latent_dir, 'images')
 
+    if test:
+        test_dir = os.path.join(latent_dir, 'test')
+    else:
+        test_dir = None
+
     file_path_files = sorted(glob.glob(os.path.join(latent_dir, 'file_paths_*.json')))
-    latent_files = sorted(glob.glob(os.path.join(latent_dir, 'latents_*.pt')))
-
     all_file_paths = []
-    all_latents = []
 
-    for fp_file, latent_file in zip(file_path_files, latent_files):
+    for fp_file in file_path_files:
         with open(fp_file, 'r') as f:
             file_paths = json.load(f)
-        latents = torch.load(latent_file)
 
         all_file_paths.extend(file_paths)
-        all_latents.append(latents)
-
-    all_latents = torch.cat(all_latents, dim=0)  # Shape: (num_images, num_features)
 
     features_with_activation = []
-    topk_indices_dict = {}  # Store topk indices for each feature
 
     for feature_idx in range(num_features):
         json_file = os.path.join(image_dir, f'feature_{feature_idx}/{feature_idx}_top9.json')
@@ -258,7 +261,6 @@ def run_sort_eval(
             with open(json_file, 'r') as f:
                 data = json.load(f)
                 topk_indices = data.get('indices', [])
-                topk_indices_dict[feature_idx] = topk_indices
 
     total_features = len(features_with_activation)
 
@@ -281,10 +283,8 @@ def run_sort_eval(
     evaluations = {}  # Dictionary to store evaluations
 
     if n_workers <= 1:
-        for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs, 1):
-            evaluation = evaluate_pair(
-                idx, feature1_idx, feature2_idx, all_latents, all_file_paths, topk_indices_dict, image_dir
-            )
+        for idx, (feature1_idx, feature2_idx) in enumerate(feature_pairs):
+            evaluation = evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, test_dir=test_dir)
 
             if evaluation is not None:
                 evaluations[f'pair_{idx}'] = evaluation
@@ -295,14 +295,13 @@ def run_sort_eval(
             future_to_idx = {
                 executor.submit(
                     evaluate_pair,
-                    idx=i+1,
+                    idx=i,
                     feature1_idx=pair[0],
                     feature2_idx=pair[1],
-                    all_latents=all_latents,
                     all_file_paths=all_file_paths,
-                    topk_indices_dict=topk_indices_dict,
-                    image_dir=image_dir
-                ): i+1 for i, pair in enumerate(feature_pairs_list)
+                    image_dir=image_dir,
+                    test_dir=test_dir,
+                ): i for i, pair in enumerate(feature_pairs_list)
             }
 
             for future in concurrent.futures.as_completed(future_to_idx):
@@ -320,6 +319,15 @@ def run_sort_eval(
     accuracy = correct / len(evaluations) if evaluations else 0
     print(f"\nAverage accuracy: {accuracy:.2f}")
 
+    end = time.time()
+    print(f"\nTotal time taken: {end - start:.2f} seconds")
+
+    evaluations = {
+        'evaluations': evaluations,
+        'accuracy': accuracy,
+        'total_time': end - start
+    }
+
     with open(os.path.join(image_dir, 'gpt4_evaluations.json'), 'w') as f:
         json.dump(evaluations, f, indent=2)
 
@@ -329,4 +337,6 @@ if __name__ == '__main__':
     run_sort_eval(
         latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
         n_evals=2,
+        n_workers=1,
+        test=True
     )

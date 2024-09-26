@@ -1,31 +1,48 @@
 from train_sae import main
 import json
 
-# configs = [
-#     {
-#         "name": "baseline-big-4x-fix",
-#         "wandb_project": "vit-sae-test",
-#         "n_feats": 65536,
-#         "batch_size": 8192,
-#         "k": 32,
-#         "lr": 0.0004,
-#         "l1_coefficient":0.00008,
-#         'data_name': "ViT-3_000_000",
-#         "d_in": 1024,
-#         "samples_per_file": 20480,
-#         "seq_len": 1,
-#         "n_experts": 8,
-#         "cache_buffer_size": 10,
-#         "n_cache_workers": 6,
-#         "architecture": 'topk',
-#         "batch_norm": False,
-#         "use_wandb": False
-#     },
-# ]
+configs = [
+    {
+    "wandb_project": "vit-switch",
+    "n_feats": 65536,
+    "n_tokens": 3000000,
+    "batch_size": 1024,
+    "k": 8,
+    "lr": 0.0004,
+    "l1_coefficient": 1e-04,
+    "data_name": "ViT-3mil",
+    "d_in": 1024,
+    "seq_len": 1,
+    "cache_buffer_size": 3,
+    "n_cache_workers": 4,
+    "batch_norm": False,
+    "save_every": 4000000,
+    "architecture": "relu",
+    "name": "relu-l1-0.0001"
+  },
+    {
+    "wandb_project": "vit-switch",
+    "n_feats": 65536,
+    "n_tokens": 3000000,
+    "batch_size": 1024,
+    "k": 8,
+    "lr": 0.0004,
+    "l1_coefficient": 0.00011,
+    "data_name": "ViT-3mil",
+    "d_in": 1024,
+    "seq_len": 1,
+    "cache_buffer_size": 3,
+    "n_cache_workers": 4,
+    "batch_norm": False,
+    "save_every": 4000000,
+    "architecture": "relu",
+    "name": "relu-l1-0.00011"
+  },
+]
 
-filename = 'cruft/switch_configs.json'
-with open(filename) as f:
-    configs = json.load(f)
+# filename = 'cruft/switch_configs.json'
+# with open(filename) as f:
+#     configs = json.load(f)
 
 if __name__ == '__main__':
     print(f'running {len(configs)} configs')

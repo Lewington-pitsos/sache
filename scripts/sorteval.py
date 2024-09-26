@@ -152,7 +152,7 @@ def _evaluate_pair(*args, **kwargs):
         except Exception as e:
             print(f"Error: {e}")
             print(f"Retrying... ({i + 1}/{tries})")
-            time.sleep(10 )
+            time.sleep(10)
 
     print(f"Pair {args[0]} could not be evaluated.")
 
@@ -367,10 +367,28 @@ if __name__ == '__main__':
     # )
 
 
+    # run_sort_eval(
+    #     latent_dir = 'cruft/ViT-3mil-topkk-8-experts-32_703f58/latents-2969600',
+    #     n_evals=250,
+    #     n_workers=2,
+    #     test=True,
+    #     seed=0
+    # )
+
+
     run_sort_eval(
-        latent_dir = 'cruft/ViT-3mil-topkk-8-experts-32_703f58/latents-2969600',
+        latent_dir = 'cruft/ViT-3mil-topkk-32-experts-8_5d073c/latents-2969600',
         n_evals=250,
-        n_workers=2,
+        n_workers=4,
         test=True,
         seed=0
     )
+
+    # run_sort_eval(
+    #     latent_dir = 'cruft/ViT-3mil-relu-l1-9e-05_f0477c/latents-2969600',
+    #     n_evals=250,
+    #     n_workers=4,
+    #     test=True,
+    #     seed=0
+    # )
+

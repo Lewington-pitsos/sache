@@ -16,7 +16,6 @@ def main(
         n_activations=250_000,
         save_every=10,
         batch_size=2048,
-        save_up_to=650,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
         hook_name="resid",
         layer=-2,
@@ -43,7 +42,6 @@ def main(
             activations = transformer.cls_activations(batch)
 
             latent = sae.forward_descriptive(activations)['latent'].detach().cpu()
-            latent = latent[:, :save_up_to]
 
             if latents is None:
                 latents = latent
@@ -86,28 +84,16 @@ if __name__ == '__main__':
     #     n_activations=250_000,
     # )
 
+    # main(
+    #     sae_path='cruft/ViT-3mil-topkk-32-experts-8_5d073c/2969600.pt',
+    #     n_activations=250_000,
+    # )
+
+
     main(
-        sae_path='cruft/ViT-3mil-topkk-32-experts-8_5d073c/2969600.pt',
+        sae_path='cruft/ViT-3mil-relu-l1-0.0001_ed4f74/2969600.pt',
         n_activations=250_000,
     )
-
-    # main(
-    #     sae_path='cruft/ViT-3mil-topkk-16-experts-8_62b60e/2969600.pt',
-    #     n_activations=250_000,
-    # )
-
-
-    # main(
-    #     sae_path='cruft/ViT-3mil-topkk-8-experts-8_fa5f99/2969600.pt',
-    #     n_activations=250_000,
-    # )
-
-
-    # main(
-    #     sae_path='cruft/ViT-3mil-topkk-64-experts-8_3e556f/2969600.pt',
-    #     n_activations=250_000,
-    # )
-
 
 
     

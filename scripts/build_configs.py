@@ -14,6 +14,7 @@ baseline =        {
     "cache_buffer_size": 3,
     "n_cache_workers": 4,
     "batch_norm": False,
+    'architecture': 'topk',
     "save_every": 4_000_000
 }
 
@@ -26,17 +27,15 @@ all_configs = []
 #     config['name'] = f'relu-l1-{l1}'
 #     all_configs.append(config)
 
-for k in [8, 16, 32, 64,	128, 256]:
+for k in [8, 16, 64, 128, 256]:
     config = baseline.copy()
     config['k'] = k
-    config['architecture'] = 'topk'
-    for n_experts in [None, 8, 16, 32, 64, 128]:
+    for n_experts, n_feats in zip([None, 2, 4], [16384, 32768, 65536]):
         config = config.copy()
         config['n_experts'] = n_experts
-        config['name'] = f'topkk-{k}-experts-{n_experts}'
+        config['name'] = f'flop-topkk-{k}-experts-{n_experts}'
         all_configs.append(config)
 
-
 print(f'Generated {len(all_configs)} configs')
-with open('cruft/switch_configs.json', 'w') as f:
+with open('cruft/flop_switch_configs.json', 'w') as f:
     json.dump(all_configs, f, indent=2)

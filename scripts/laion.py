@@ -11,9 +11,10 @@ if __name__ == "__main__":
     download(
         processes_count=14,
         thread_count=64,
-        url_list="laion/pq-11/",
+        output_folder="cruft/pq",
+        url_list="laion/pq-1/",
         image_size=256, 
-        output_format="files",
+        output_format="webdataset",
         input_format="parquet",
         url_col="URL",
         caption_col="TEXT",

@@ -33,7 +33,7 @@ def encode_image_to_base64(image_path: str) -> str:
 def construct_prompt(
     f1grid_file: str,
     f2grid_file: str,
-    query_example_path: str,
+    query_image_path: str,
 ) -> List[Dict]:
     content = []
 
@@ -79,8 +79,6 @@ def construct_prompt(
     specific_example_text = "\nSpecific Example:\n"
     content.append({"type": "text", "text": specific_example_text})
 
-    # Specific Example Image
-    query_image_path = query_example_path
     if query_image_path and os.path.exists(query_image_path):
         encoded_query_image = encode_image_to_base64(query_image_path)
         query_image_block = {
@@ -212,7 +210,7 @@ def evaluate_pair(idx, feature1_idx, feature2_idx, all_file_paths, image_dir, te
     prompt = construct_prompt(
         f1grid_file=f1grid_file,
         f2grid_file=f2grid_file,
-        query_example_path=query_path,
+        query_image_path=query_path,
     )
 
     if test_dir is not None:
@@ -343,8 +341,6 @@ def run_sort_eval(
     end = time.time()
     print(f"\nTotal time taken: {end - start:.2f} seconds")
 
-
-
     evaluations = {
         'evaluations': evaluations,
         'mean_correctness': mean_correctness,
@@ -352,43 +348,26 @@ def run_sort_eval(
         'all_pairs': feature_pairs_list
     }
 
-    with open(os.path.join(image_dir, 'gpt4_evaluations.json'), 'w') as f:
+    with open(os.path.join(image_dir, f's-{seed}-gpt4_evaluations.json'), 'w') as f:
         json.dump(evaluations, f, indent=2)
 
     print("\nAll evaluations have been saved to 'gpt4_evaluations.json'.")
 
 if __name__ == '__main__':
-    # run_sort_eval(
-    #     latent_dir = 'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
-    #     n_evals=250,
-    #     n_workers=4,
-    #     test=True,
-    #     seed=0
-    # )
+    conditions = [
+        'cruft/ViT-3mil-topkk-32-experts-None_1aaa89/latents-2969600',
+        'cruft/ViT-3mil-topkk-32-experts-8_5d073c/latents-2969600',
+        'cruft/ViT-3mil-relu-l1-0.0001_ed4f74/latents-2969600',
+    ]
+    seeds = [0, 1, 2, 3]
 
-
-    # run_sort_eval(
-    #     latent_dir = 'cruft/ViT-3mil-topkk-8-experts-32_703f58/latents-2969600',
-    #     n_evals=250,
-    #     n_workers=2,
-    #     test=True,
-    #     seed=0
-    # )
-
-
-    run_sort_eval(
-        latent_dir = 'cruft/ViT-3mil-topkk-32-experts-8_5d073c/latents-2969600',
-        n_evals=250,
-        n_workers=4,
-        test=True,
-        seed=0
-    )
-
-    # run_sort_eval(
-    #     latent_dir = 'cruft/ViT-3mil-relu-l1-9e-05_f0477c/latents-2969600',
-    #     n_evals=250,
-    #     n_workers=4,
-    #     test=True,
-    #     seed=0
-    # )
+    for seed in seeds:
+        for c in conditions:
+            run_sort_eval(
+                latent_dir = c,
+                n_evals=450,
+                n_workers=4,
+                test=False,
+                seed=seed
+            )
 

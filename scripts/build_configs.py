@@ -33,6 +33,7 @@ for k in [8, 16, 64, 128, 256]:
     for n_experts, n_feats in zip([None, 2, 4], [16384, 32768, 65536]):
         config = config.copy()
         config['n_experts'] = n_experts
+        config['n_feats'] = n_feats
         config['name'] = f'flop-topkk-{k}-experts-{n_experts}'
         all_configs.append(config)
 

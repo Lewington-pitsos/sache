@@ -6,8 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import randomname
 
-from sache.generator import vit_generate
-from sache.imgloader import FileDataset
+from sache import vit_generate
+from sache import FileDataset
 
 # python scripts/vit_generate.py --run_name "ViT-3_000_000" --n_samples=3000000 --batch_size=2048
 # python scripts/vit_generate.py --run_name "ViT-3mil" --n_samples=3000000 --batch_size=2048

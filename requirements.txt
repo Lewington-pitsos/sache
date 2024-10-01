@@ -137,10 +137,9 @@ typing_extensions==4.12.2
 tzdata==2024.1
 urllib3==2.2.2
 uvloop==0.19.0
-wandb==0.17.5
+wandb
 wcwidth==0.2.13
 xxhash==3.4.1
 yarl==1.9.4
 zstandard==0.22.0
-img2dataset
 pyspark

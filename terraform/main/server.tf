@@ -7,8 +7,8 @@ resource "aws_key_pair" "deployer" {
   public_key = file("~/.ssh/id_sache.pub") # NOTE: Change this to your public key path
 }
 
-resource "aws_security_group" "allow_ssh" {
-  name        = "allow_ssh"
+resource "aws_security_group" "allow_ssh_sache" {
+  name        = "allow_ssh_sache"
   description = "Allow SSH inbound traffic"
 
   ingress {
@@ -31,7 +31,7 @@ resource "aws_instance" "sache" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer.key_name
 
-  security_groups = [aws_security_group.allow_ssh.name]
+  security_groups = [aws_security_group.allow_ssh_sache.name]
 
   tags = {
     Name = "sache"

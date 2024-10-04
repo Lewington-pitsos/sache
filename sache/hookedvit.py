@@ -172,14 +172,13 @@ class SpecifiedHookedViT(HookedVisionTransformer):
             assert 'layer' in location, "Each hook location must have a key 'layer'."
             assert 'module' in location, "Each hook location must have a key 'module'."
         
-        self.hook_locations = hook_locations
-        self._formatted_hook_locations = [(location['layer'], location['module']) for location in hook_locations]
+        self._hook_locations = [(location['layer'], location['module']) for location in hook_locations]
 
     def all_activations(self, batch):
         inputs = self.processor(images=batch, text = "", return_tensors="pt", padding = True).to(self.model.device)
 
         _, cache_dict = self.run_with_cache(
-            self._formatted_hook_locations,
+            self._hook_locations,
             **inputs,
         )
 

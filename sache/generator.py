@@ -221,13 +221,13 @@ def generate(
 def build_caches(hook_locations, *args, run_name, **kwargs):
     caches = {}
     used_hook_ids = set()
-    for hook_location in range(len(hook_locations)):
-        hook_id = f"{hook_location['layer']}__{hook_location['module']}"
+    for location in hook_locations:
+        hook_id = f"{location['layer']}__{location['module']}"
         if hook_id in used_hook_ids:
             raise ValueError(f"hook_id {hook_id} is duplicated")
         used_hook_ids.add(hook_id)
         hook_run_name=f"{run_name}/{hook_id}"
-        caches[(hook_location['layer'], hook_location['module'])] = build_cache(*args, run_name=hook_run_name, **kwargs)
+        caches[(location['layer'], location['module'])] = build_cache(*args, run_name=hook_run_name, **kwargs)
 
     return caches
 
@@ -280,7 +280,13 @@ def vit_generate(
             'seed': seed,
         })
 
-        caches = build_caches(hook_locations, cache_type, batches_per_cache, run_name=run_name, bucket_name=bucket_name)
+        caches = build_caches(
+            hook_locations=hook_locations, 
+            cache_type=cache_type, 
+            batches_per_cache=batches_per_cache, 
+            run_name=run_name, 
+            bucket_name=bucket_name
+        )
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
         transformer.eval()
@@ -299,10 +305,10 @@ def vit_generate(
                     activations = cache_dict[location]
                     
                     if means[location] is None:
-                        means[location] = activations.mean(dim=0).to('cpu')
+                        means[location] = activations.mean(dim=0).detach().to('cpu')
                         stds[location] = activations.std(dim=0).to('cpu')
                     else:
-                        means[location] += activations.mean(dim=0).to('cpu')
+                        means[location] += activations.mean(dim=0).detach().to('cpu')
                         stds[location] += activations.std(dim=0).to('cpu')
                     
                     cache.append(activations.to('cpu'))
@@ -317,6 +323,6 @@ def vit_generate(
                 
                 lg.log_batch(activations) # only logs the last activations
 
-        for location, cache in caches.items():
-            cache.save_mean_std(means[location] / i, stds[location] / i)
-            cache.finalize()
+            for location, cache in caches.items():
+                cache.save_mean_std(means[location] / i, stds[location])
+                cache.finalize()

@@ -31,6 +31,22 @@ def main(
     data_directory = 'images'
     dataset = FileDataset(root_dir=data_directory)
 
+    hook_locations = [
+        {'layer':2, 'module':'resid'},
+        {'layer':4, 'module':'resid'},
+        {'layer':6, 'module':'resid'},
+        {'layer':8, 'module':'resid'},
+        {'layer':10, 'module':'resid'},
+        {'layer':12, 'module':'resid'},
+        {'layer':14, 'module':'resid'},
+        {'layer':16, 'module':'resid'},
+        {'layer':18, 'module':'resid'},
+        {'layer':20, 'module':'resid'},
+        {'layer':22, 'module':'resid'},
+    ]
+
+    print('number of hooks:', len(hook_locations))
+
     vit_generate(
         run_name,
         batches_per_cache=batches_per_cache,
@@ -38,8 +54,7 @@ def main(
         transformer_name=transformer_name, 
         batch_size=batch_size, 
         device='cuda',
-        layer=-2,
-        hook_name="resid",
+        hook_locations=hook_locations,
         cache_type='s3_threaded_nonshuffling',
         n_samples=n_samples,
         log_every=None if log_every < 1 else log_every,

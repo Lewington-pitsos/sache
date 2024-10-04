@@ -238,8 +238,7 @@ def vit_generate(
         transformer_name, 
         batch_size, 
         device,
-        layer,
-        hook_name,
+        hook_locations,
         cache_type,
         n_samples=None,
         seed=42,
@@ -257,7 +256,6 @@ def vit_generate(
     if bucket_name is None:
         bucket_name = BUCKET_NAME
 
-    hook_locations = [{'layer':layer, 'module':hook_name}]
     torch.manual_seed(seed)
     transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
 
@@ -274,8 +272,7 @@ def vit_generate(
             'transformer_name': transformer_name,
             'batch_size': batch_size,
             'device': device,
-            'layer': layer,
-            'hook_name': hook_name,
+            'hook_locations': hook_locations,
             'cache_type': cache_type,
             'seed': seed,
         })

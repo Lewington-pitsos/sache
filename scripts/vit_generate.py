@@ -33,7 +33,8 @@ def main(
 
     hook_locations = [
         {'layer':2, 'module':'resid'},
-        {'layer':4, 'module':'resid'},
+        {'layer':4, 'module':'resid'},-A
+        
         {'layer':6, 'module':'resid'},
         {'layer':8, 'module':'resid'},
         {'layer':10, 'module':'resid'},

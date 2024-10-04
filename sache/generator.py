@@ -30,11 +30,11 @@ class GenerationLogger(ProcessLogger):
         self._keep_running = True
         self.worker_thread.start()
 
-
     def _log_system_usage(self):
         while self._keep_running:
             self.log({
                 'event': 'system_usage',
+                'cpu_memory_percent': psutil.virtual_memory().percent,
                 'torch.cuda.memory_allocated': torch.cuda.memory_allocated(0) / 1024**2,
                 'torch.cuda.memory_reserved': torch.cuda.memory_reserved(0) / 1024**2,
                 'torch.cuda.max_memory_reserved': torch.cuda.max_memory_reserved(0) / 1024**2,
@@ -104,10 +104,18 @@ def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME
     elif cache_type == 'local_threaded':
         inner_cache = WCache(run_name, save_every=batches_per_cache)
         cache = ThreadedWCache(inner_cache)
-    elif cache_type in ['s3r', 's3r_threaded', 's3_threaded_nonshuffling']:
-        inner_cache = S3WCache.from_credentials(access_key_id=cred['AWS_ACCESS_KEY_ID'], secret=cred['AWS_SECRET'], run_name=run_name, save_every=batches_per_cache, bucket_name=bucket_name)    
+    elif cache_type in ['s3', 's3_nonshuffling', 's3_threaded', 's3_threaded_nonshuffling']:
+        inner_cache = S3WCache.from_credentials(
+            access_key_id=cred['AWS_ACCESS_KEY_ID'], 
+            secret=cred['AWS_SECRET'], 
+            run_name=run_name, 
+            save_every=batches_per_cache, 
+            bucket_name=bucket_name
+        )    
         if cache_type == 's3':
             cache = ShufflingWCache(inner_cache, buffer_size=shuffling_buffer_size)
+        if cache_type == 's3_nonshuffling':
+            cache = inner_cache
         elif cache_type == 's3_threaded':
             cache = ThreadedWCache(ShufflingWCache(inner_cache, buffer_size=shuffling_buffer_size))
         elif cache_type == 's3_threaded_nonshuffling':
@@ -222,7 +230,7 @@ def build_caches(hook_locations, *args, run_name, **kwargs):
     caches = {}
     used_hook_ids = set()
     for location in hook_locations:
-        hook_id = f"{location['layer']}__{location['module']}"
+        hook_id = f"{location['layer']}_{location['module']}"
         if hook_id in used_hook_ids:
             raise ValueError(f"hook_id {hook_id} is duplicated")
         used_hook_ids.add(hook_id)
@@ -301,25 +309,34 @@ def vit_generate(
                 for location, cache in caches.items():
                     activations = cache_dict[location]
                     
-                    if means[location] is None:
-                        means[location] = activations.mean(dim=0).detach().to('cpu')
-                        stds[location] = activations.std(dim=0).to('cpu')
+                    if location not in means:
+                        mean_acts = activations.mean(dim=0)
+                        std_acts = activations.std(dim=0)
+                        if len(mean_acts.shape) > 1:
+                            mean_acts = mean_acts.mean(dim=0)
+                            std_acts = std_acts.mean(dim=0)
+
+                        mean_acts = mean_acts.cpu()
+                        std_acts = std_acts.cpu()
+
+                        means[location] = mean_acts
+                        stds[location] = std_acts
                     else:
-                        means[location] += activations.mean(dim=0).detach().to('cpu')
-                        stds[location] += activations.std(dim=0).to('cpu')
+                        means[location] += mean_acts
+                        stds[location] += std_acts
                     
-                    cache.append(activations.to('cpu'))
+                    cache.append(activations.cpu())
 
                     if i % 100 == 0 and i > 0:
                         save_mean = means[location] / i
                         save_std = stds[location] / i
-                        cache.save_mean_std(save_mean, save_std)
+                        # cache.save_mean_std(save_mean, save_std)
 
                 if n_samples is not None and i * batch_size >= n_samples:
                     break
                 
-                lg.log_batch(activations) # only logs the last activations
+                lg.log_batch(activations.to('cpu')) # only logs the last activations
 
-            for location, cache in caches.items():
-                cache.save_mean_std(means[location] / i, stds[location])
-                cache.finalize()
+            # for location, cache in caches.items():
+            #     cache.save_mean_std(means[location] / i, stds[location])
+            #     cache.finalize()

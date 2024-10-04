@@ -72,7 +72,6 @@ class ThreadedWCache:
         self._run_in_thread(None)  # Signal the worker thread to exit
         self.worker_thread.join()
 
-
 def _metadata_path(run_name):
     return f'{run_name}/metadata.json'
 
@@ -127,8 +126,12 @@ class S3WCache():
         if self.metadata is None:
             raise ValueError('Cannot finalize cache without any data')
         
-        
     def _save_in_mem(self):
+        id = str(uuid4())
+        if len(self._in_mem) >1:
+            id = self._save(torch.cat(self._in_mem), id)
+        else:
+            id = self._save(self._in_mem[0], id)
         id = self._save(torch.cat(self._in_mem), str(uuid4()))
         self._in_mem = []
 
@@ -141,7 +144,7 @@ class S3WCache():
         filename = self._filename(id)
 
         tensor_bytes = activations.numpy().tobytes()
-    
+
         self.s3_client.put_object(
             Bucket=self.bucket_name, 
             Key=filename, 

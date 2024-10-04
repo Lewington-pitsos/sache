@@ -1,3 +1,4 @@
+from numpy import isin
 import torch
 from transformers import CLIPProcessor, CLIPModel
 from typing import Callable
@@ -164,28 +165,30 @@ class HookedVisionTransformer():
         self.model.train()
 
 class SpecifiedHookedViT(HookedVisionTransformer):
-    def __init__(self, model_name: str, device = 'cuda'):
-        pass
-    
-    def get_activations(self, batch):
-        pass
-
-class SpecifiedHookedViT(HookedVisionTransformer):
-    def __init__(self, block_layer, module_name, *args, **kwargs):
+    def __init__(self, hook_locations, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.block_layer = block_layer
-        self.module_name = module_name
-        self.list_of_hook_locations = [(block_layer, module_name)]
+        for location in hook_locations:
+            assert isinstance(location, dict), "Each hook location must be a dictionary."
+            assert 'layer' in location, "Each hook location must have a key 'layer'."
+            assert 'module' in location, "Each hook location must have a key 'module'."
+        
+        self.hook_locations = hook_locations
+        self._formatted_hook_locations = [(location['layer'], location['module']) for location in hook_locations]
 
     def all_activations(self, batch):
         inputs = self.processor(images=batch, text = "", return_tensors="pt", padding = True).to(self.model.device)
 
-        activations = self.run_with_cache(
-            self.list_of_hook_locations,
+        _, cache_dict = self.run_with_cache(
+            self._formatted_hook_locations,
             **inputs,
-        )[1][self.list_of_hook_locations[0]]
+        )
 
-        return activations # only the last activation
+        return cache_dict
 
     def cls_activations(self, batch):
-        return self.all_activations(batch)[:,0]
+        cache_dict = self.all_activations(batch)
+
+        for k, v in cache_dict.items():
+            cache_dict[k] = v[:,0]
+
+        return cache_dict

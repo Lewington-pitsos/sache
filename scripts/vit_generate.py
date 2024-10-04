@@ -18,7 +18,7 @@ def main(
         run_name=None, 
         bucket_name=None, 
         n_samples=None,
-        transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K',
+        transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K', # 24 layers in total
         batch_size=1024,
         log_every=10,
         batches_per_cache=50,

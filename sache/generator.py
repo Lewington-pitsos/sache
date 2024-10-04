@@ -8,6 +8,7 @@ from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 from multiprocessing import cpu_count
 
+from sache import cache
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger
@@ -217,6 +218,19 @@ def generate(
         cache.save_mean_std(means, stds)
         cache.finalize()
 
+def build_caches(hook_locations, *args, run_name, **kwargs):
+    caches = {}
+    used_hook_ids = set()
+    for hook_location in range(len(hook_locations)):
+        hook_id = f"{hook_location['layer']}__{hook_location['module']}"
+        if hook_id in used_hook_ids:
+            raise ValueError(f"hook_id {hook_id} is duplicated")
+        used_hook_ids.add(hook_id)
+        hook_run_name=f"{run_name}/{hook_id}"
+        caches[(hook_location['layer'], hook_location['module'])] = build_cache(*args, run_name=hook_run_name, **kwargs)
+
+    return caches
+
 def vit_generate(
         run_name, 
         batches_per_cache,
@@ -243,8 +257,9 @@ def vit_generate(
     if bucket_name is None:
         bucket_name = BUCKET_NAME
 
+    hook_locations = [{'layer':layer, 'module':hook_name}]
     torch.manual_seed(seed)
-    transformer = SpecifiedHookedViT(layer, hook_name, transformer_name, device=device)
+    transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
 
     if log_every is not None:
         logger = GenerationLogger(run_name, None, log_every=log_every)
@@ -265,42 +280,43 @@ def vit_generate(
             'seed': seed,
         })
 
-        cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
+        caches = build_caches(hook_locations, cache_type, batches_per_cache, run_name=run_name, bucket_name=bucket_name)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         
         transformer.eval()
-        means = None
-        stds = None
+        means = {}
+        stds = {}
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
                 
                 if full_sequence:
-                    activations = transformer.all_activations(batch)
+                    cache_dict = transformer.all_activations(batch)
                 else:
-                    activations = transformer.cls_activations(batch)
+                    cache_dict = transformer.cls_activations(batch)
 
-                if means is None:
-                    means = activations.mean(dim=0).to('cpu')
-                    stds = activations.std(dim=0).to('cpu')
-                else:
-                    means += activations.mean(dim=0).to('cpu')
-                    stds += activations.std(dim=0).to('cpu')
+                for location, cache in caches.items():
+                    activations = cache_dict[location]
+                    
+                    if means[location] is None:
+                        means[location] = activations.mean(dim=0).to('cpu')
+                        stds[location] = activations.std(dim=0).to('cpu')
+                    else:
+                        means[location] += activations.mean(dim=0).to('cpu')
+                        stds[location] += activations.std(dim=0).to('cpu')
+                    
+                    cache.append(activations.to('cpu'))
 
-                lg.log_batch(activations)
-
-                cache.append(activations.to('cpu'))
+                    if i % 100 == 0 and i > 0:
+                        save_mean = means[location] / i
+                        save_std = stds[location] / i
+                        cache.save_mean_std(save_mean, save_std)
 
                 if n_samples is not None and i * batch_size >= n_samples:
                     break
                 
-                if i % 100 == 0:
-                    save_mean = means / i
-                    save_std = stds / i
-                    cache.save_mean_std(save_mean, save_std)
+                lg.log_batch(activations) # only logs the last activations
 
-            means /= i
-            stds /= i
-        
-        cache.save_mean_std(means, stds)
-        cache.finalize()
+        for location, cache in caches.items():
+            cache.save_mean_std(means[location] / i, stds[location] / i)
+            cache.finalize()

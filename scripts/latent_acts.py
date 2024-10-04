@@ -26,7 +26,7 @@ def main(
     dataset = FilePathDataset(root_dir=data_directory)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
-    transformer = SpecifiedHookedViT(layer, hook_name, transformer_name, device=device)
+    transformer = SpecifiedHookedViT([{'layer':layer, 'module':hook_name}], transformer_name, device=device)
     sae = torch.load(sae_path)
     
     n_steps = sae_path.split('/')[-1].split('.')[0]

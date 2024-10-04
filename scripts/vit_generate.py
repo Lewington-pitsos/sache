@@ -67,3 +67,6 @@ def main(
 if __name__ == '__main__':
     fire.Fire(main)
     
+# 641.3362 MB/s @ 8 processes
+# 471.1610 MB/s @ 6 processes
+# 548.0496 MB/s @ 6 processes memshare

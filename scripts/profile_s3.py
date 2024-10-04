@@ -3,41 +3,22 @@ import boto3
 import numpy as np
 import time
 import os
+import multiprocessing
 
-credentials_file = '.credentials.json'
-with open(credentials_file, 'r') as f:
-    creds = json.load(f)
+def upload_task(args):
+    index, creds, bucket_name, tensor_size = args
 
-# Create S3 client
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=creds['AWS_ACCESS_KEY_ID'],
-    aws_secret_access_key=creds['AWS_SECRET']
-)
+    # Each process creates its own S3 client
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=creds['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=creds['AWS_SECRET']
+    )
 
-# Define S3 bucket name
-bucket_name = 'lewington-pitsos-sache'  # Replace with your actual bucket name
-
-# Ensure the bucket exists
-try:
-    s3_client.head_bucket(Bucket=bucket_name)
-except s3_client.exceptions.NoSuchBucket:
-    s3_client.create_bucket(Bucket=bucket_name)
-    print(f"Created bucket: {bucket_name}")
-
-# Create a sample tensor (numpy array)
-tensor_size = (257, 1000, 1000)  # Adjust size as needed
-tensor = np.random.rand(*tensor_size)
-
-# Convert tensor to bytes
-tensor_bytes = tensor.tobytes()
-
-# List to store upload times
-upload_times = []
-
-# Perform 10 uploads
-for i in range(10):
-    object_key = f'profiling/test-tensor-{i}'  # Unique object key for each upload
+    # Each process creates its own tensor
+    tensor = np.random.rand(*tensor_size)
+    tensor_bytes = tensor.tobytes()
+    object_key = f'profiling/test-tensor-{index}'  # Unique object key for each upload
 
     # Start timing
     start_time = time.time()
@@ -56,14 +37,90 @@ for i in range(10):
 
     # Calculate time taken
     time_taken = end_time - start_time
-    upload_times.append(time_taken)
+    size_in_bytes = tensor.nbytes
 
-    print(f"Upload {i+1}: Uploaded tensor of size {tensor.nbytes / 1024 / 1024} megabytes in {time_taken:.4f} seconds.")
+    # Optionally, print progress
+    print(f"Task {index+1}: Uploaded tensor of size {size_in_bytes / 1024 / 1024:.2f} MB in {time_taken:.4f} seconds.")
 
-# Calculate mean and standard deviation
-mean_time = np.mean(upload_times)
-std_time = np.std(upload_times)
+    return time_taken, size_in_bytes
 
-print(f"\nMean upload time: {mean_time:.4f} seconds")
-print(f"Mean megabytes per second: {tensor.nbytes / 1024 / 1024 / mean_time:.4f} MB/s")
-print(f"Standard deviation of upload times: {std_time:.4f} seconds")
+def main():
+    # Load AWS credentials from .credentials.json
+    credentials_file = '.credentials.json'
+    if not os.path.exists(credentials_file):
+        raise FileNotFoundError(f"Credentials file '{credentials_file}' not found.")
+
+    with open(credentials_file, 'r') as f:
+        creds = json.load(f)
+
+    if 'AWS_ACCESS_KEY_ID' not in creds or 'AWS_SECRET' not in creds:
+        raise KeyError("Credentials file must contain 'AWS_ACCESS_KEY_ID' and 'AWS_SECRET' keys.")
+
+    # Define S3 bucket name
+    bucket_name = 'lewington-pitsos-sache'  # Replace with your actual bucket name
+
+    # Create S3 client in the main process to check/create the bucket
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=creds['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=creds['AWS_SECRET']
+    )
+
+    # Ensure the bucket exists
+    try:
+        s3_client.head_bucket(Bucket=bucket_name)
+    except s3_client.exceptions.NoSuchBucket:
+        s3_client.create_bucket(Bucket=bucket_name)
+        print(f"Created bucket: {bucket_name}")
+
+    # Define tensor size
+    tensor_size = (257, 1000, 1000)  # Adjust size as needed
+
+    # Number of processes (adjust as needed)
+    num_processes = 6
+    total_uploads = 50
+
+    # Create a multiprocessing Queue to collect results
+    result_queue = multiprocessing.Queue()
+
+    # Start overall timing
+    overall_start_time = time.time()
+
+    task_args = [
+        (i, creds, bucket_name, tensor_size)
+        for i in range(total_uploads)
+    ]
+
+    # Collect results
+    upload_times = []
+    total_bytes_uploaded = 0
+
+    # Use multiprocessing Pool to distribute tasks among processes
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        # Map the upload_task function to the task arguments
+        results = pool.map(upload_task, task_args)
+
+    # Process results
+    for time_taken, size_in_bytes in results:
+        upload_times.append(time_taken)
+        total_bytes_uploaded += size_in_bytes
+    # End overall timing
+    overall_end_time = time.time()
+    overall_time_taken = overall_end_time - overall_start_time
+
+    # Calculate mean and standard deviation
+    mean_time = np.mean(upload_times)
+    std_time = np.std(upload_times)
+
+    # Calculate overall megabytes per second
+    total_megabytes = total_bytes_uploaded / (1024 * 1024)
+    overall_mb_per_sec = total_megabytes / overall_time_taken
+
+    print(f"\nMean upload time per process: {mean_time:.4f} seconds")
+    print(f"Standard deviation of upload times: {std_time:.4f} seconds")
+    print(f"Total data uploaded: {total_megabytes:.2f} MB")
+    print(f"Overall time taken: {overall_time_taken:.4f} seconds")
+    print(f"Overall megabytes per second: {overall_mb_per_sec:.4f} MB/s")
+
+if __name__ == '__main__':
+    main()

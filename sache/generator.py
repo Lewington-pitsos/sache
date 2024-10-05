@@ -241,7 +241,7 @@ def vit_generate(
         n_samples=None,
         seed=42,
         log_every=100,
-        full_sequence=True,
+        full_sequence=False,
         num_data_workers=2,
         input_tensor_shape=None,
         num_cache_workers=5,

@@ -15,6 +15,8 @@ import signal
 from multiprocessing import Value, Process, Queue
 import multiprocessing as mp
 from sache.constants import BUCKET_NAME, MB, OUTER_CACHE_DIR, INNER_CACHE_DIR
+import multiprocessing
+
 
 STAGES = ['saved', 'shuffled']
 
@@ -74,6 +76,177 @@ class ThreadedWCache:
 
 def _metadata_path(run_name):
     return f'{run_name}/metadata.json'
+
+def build_s3_client(creds):
+    return boto3.client('s3', aws_access_key_id=creds['AWS_ACCESS_KEY_ID'], aws_secret_access_key=creds['AWS_SECRET'])
+
+def worker_process(buffer, run_name, bucket_name, creds, to_upload, available):
+    inactivity_timeout = 1800 # 30 minutes
+    s3_client = build_s3_client(creds)
+    last_activity = time.time()
+    while True:
+        try:
+            task = to_upload.get(timeout=5)
+            last_activity = time.time()  # Update last activity time upon receiving a task
+            try:
+                if task == 'STOP':
+                    print(f"[{multiprocessing.current_process().name}] Received STOP signal. Terminating.")
+                    break
+                elif isinstance(task, tuple):
+                    index, location = task
+                    loc_name = get_location_name(run_name, location)
+                    s3_path = f'{loc_name}/{str(uuid4())}.saved.pt'
+
+                    activations = buffer[index]
+                    tensor_bytes = activations.numpy().tobytes()
+                    
+                    s3_client.put_object(
+                        Bucket=bucket_name, 
+                        Key=s3_path, 
+                        Body=tensor_bytes, 
+                        ContentLength=len(tensor_bytes),
+                        ContentType='application/octet-stream'
+                    )
+                    available.put(index, block=True)
+
+                else:
+                    raise ValueError(f"[{multiprocessing.current_process().name}] Invalid task format: {task}")
+            except Exception as e:
+                print(f"[{multiprocessing.current_process().name}] Error occurred: {e}")
+                to_upload.put(task, block=True)
+
+        except queue.Empty:
+            current_time = time.time()
+            if (current_time - last_activity) > inactivity_timeout:
+                print(f"[{multiprocessing.current_process().name}] Inactive for {inactivity_timeout} seconds. Terminating.")
+                break
+
+def get_location_name(run_name, location):
+    layer, module = location
+    return f'{run_name}/{layer}_{module}'
+
+class MultiLayerS3WCache():
+    def __init__(self, 
+                 creds, 
+                 hook_locations, 
+                 run_name, 
+                 max_queue_size, 
+                 input_tensor_shape, 
+                 num_workers, 
+                 bucket_name,
+                 dtype=torch.float32, 
+        ):
+        self.s3_client = build_s3_client(creds)
+        self.run_name = run_name
+        self.bucket_name = bucket_name
+        self.input_tensor_shape = input_tensor_shape
+        self.dtype = dtype
+        self.max_queue_size = max_queue_size
+
+        self.metadata = {}
+        for hook_location in hook_locations:
+            self.metadata[hook_location] = None
+
+        self._buffer = torch.empty((self.max_queue_size, *input_tensor_shape), dtype=dtype).share_memory_()
+        self.workers = []
+        self.to_upload = multiprocessing.Queue(maxsize=max_queue_size)
+        self.available = multiprocessing.Queue()
+
+        for i in range(max_queue_size):
+            self.available.put(i)
+
+        self.num_workers = num_workers
+        self.creds = creds
+        self.hook_locations = hook_locations
+        self.workers = []
+
+        self.uploading = False
+        self.start()
+
+    def start(self):
+        for i in range(self.num_workers):
+            p = multiprocessing.Process(
+                target=worker_process, 
+                args=(
+                    self._buffer,
+                    self.run_name,
+                    self.bucket_name,
+                    self.creds, 
+                    self.to_upload,
+                    self.available
+                ), 
+                name=f"Worker-{i+1}"
+            )
+            p.start()
+            self.workers.append(p)
+
+        self.uploading = True
+
+    def stop(self):
+        if not self.uploading:
+            return
+
+        alive_workers = [p for p in self.workers if p.is_alive()]
+        num_alive = len(alive_workers)
+
+        print('sending stop signals to workers...')
+        for _ in range(num_alive):
+            self.to_upload.put('STOP', block=True)
+
+        print('waiting for workers to recieve stop signals and exit...')
+        for p in self.workers:  
+            p.join()
+
+        self.uploading = False
+
+    def append(self, activation_dict):
+        if not self.uploading:
+            raise ValueError('Cannot append to cache after stopping')
+
+        for location, activations in activation_dict.items():
+            if activations.device != self._buffer.device:
+                activations = activations.to(self._buffer.device)
+
+            if self.metadata[location] is None:
+                self.metadata[location] = _get_metadata(activations, 1)
+
+                self._save_metadata(location)
+            else:
+                if activations.shape[0] != self.metadata[location]['batch_size']:
+                    print(f'Warning: batch size mismatch. Expected {self.metadata[location]["batch_size"]}, got {activations.shape}')
+                if activations.shape[-1] != self.metadata[location]['d_in']:
+                    print(f'Warning: input dimension mismatch. Expected {self.metadata[location]["d_in"]}, got {activations.shape}')
+                if str(activations.dtype) != self.metadata[location]['dtype']:
+                    print(f'Warning: dtype mismatch. Expected {self.metadata[location]["dtype"]}, got {activations.dtype}')
+                if len(activations.shape) == 3 and activations.shape[1] != self.metadata[location]['sequence_length']:
+                    print(f'Warning: sequence length mismatch. Expected {self.metadata[location]["sequence_length"]}, got {activations.shape}')
+
+            next_idx = self.available.get(block=True)
+            self._buffer[next_idx] = activations
+            self.to_upload.put((next_idx, location), block=True)
+
+    
+    def _save_metadata(self, location):
+        self.s3_client.put_object(
+            Body=json.dumps(self.metadata[location]), 
+            Bucket=self.bucket_name, 
+            Key=_metadata_path(get_location_name(self.run_name, location))
+        )
+
+    def save_mean_std(self, mean, std, location):
+        self.metadata[location]['mean'] = mean.tolist()
+        self.metadata[location]['std'] = std.tolist()
+
+        self._save_metadata(location)
+
+    def finalize(self):
+        self.stop()
+
+        for location in self.metadata.keys():
+            if self.metadata[location] is None:
+                raise ValueError(f'Cannot finalize cache without any data for location {location}')
+            self._save_metadata(location)
+        
 
 class S3WCache():
     @classmethod
@@ -303,7 +476,7 @@ class S3RCache():
         self.writeable_tensors = Queue(maxsize=self.buffer_size)
         for i in range(self.buffer_size):
             self.writeable_tensors.put(i)
-        self.buffer=torch.empty((self.buffer_size, *self.metadata['shape']), dtype=self._activation_dtype).share_memory_()
+        self.buffer = torch.empty((self.buffer_size, *self.metadata['shape']), dtype=self._activation_dtype).share_memory_()
 
         self._stop = Value('b', False)
         self._file_index = Value('i', 0)

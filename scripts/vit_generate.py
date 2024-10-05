@@ -1,3 +1,4 @@
+import json
 import fire
 import sys
 import os
@@ -9,7 +10,7 @@ import randomname
 from sache import vit_generate
 from sache import FileDataset
 
-# python scripts/vit_generate.py --run_name "test3" --n_samples=3000000 --batch_size=1024 --batches_per_cache=5 --n_hooks=4 --full_sequence
+# python scripts/vit_generate.py --run_name "test3" --n_samples=3000000 --batch_size=1024 --batches_per_cache=5 --n_hooks=4 --full_sequence --input_tensor_shape=(257,1024)
 # python scripts/vit_generate.py --run_name "ViT-3_000_000" --n_samples=3000000 --batch_size=2048
 # python scripts/vit_generate.py --run_name "ViT-3mil" --n_samples=3000000 --batch_size=2048
 
@@ -24,7 +25,8 @@ def main(
         log_every=10,
         batches_per_cache=50,
         full_sequence=False,
-        n_hooks=None
+        n_hooks=None,
+        input_tensor_shape=None,
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -34,14 +36,14 @@ def main(
     dataset = FileDataset(root_dir=data_directory)
 
     hook_locations = [
-        {'layer':2, 'module':'resid'},
-        {'layer':5, 'module':'resid'},
-        {'layer':8, 'module':'resid'},
-        {'layer':11, 'module':'resid'},
-        {'layer':14, 'module':'resid'},
-        {'layer':17, 'module':'resid'},
-        {'layer':20, 'module':'resid'},
-        {'layer':22, 'module':'resid'},
+        (2, 'resid'),
+        (5, 'resid'),
+        (8, 'resid'),
+        (11, 'resid'),
+        (14, 'resid'),
+        (17, 'resid'),
+        (20, 'resid'),
+        (22, 'resid'),
     ]
 
     if n_hooks:
@@ -49,7 +51,11 @@ def main(
 
     print('number of hooks:', len(hook_locations))
 
+    with open('.credentials.json') as f:
+        creds = json.load(f)
+        
     vit_generate(
+        creds,
         run_name,
         batches_per_cache=batches_per_cache,
         dataset=dataset, 
@@ -57,11 +63,12 @@ def main(
         batch_size=batch_size, 
         device='cuda',
         hook_locations=hook_locations,
-        cache_type='s3_threaded_nonshuffling',
+        cache_type='s3_multilayer',
         n_samples=n_samples,
         log_every=None if log_every < 1 else log_every,
         bucket_name=bucket_name,
-        full_sequence=full_sequence
+        full_sequence=full_sequence,
+        input_tensor_shape=(batch_size, *input_tensor_shape) if input_tensor_shape else None,
     )
 
 if __name__ == '__main__':

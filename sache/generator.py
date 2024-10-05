@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from multiprocessing import cpu_count
 
 from sache import cache
-from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache
+from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache, MultiLayerS3WCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
@@ -95,19 +95,24 @@ class GenerationLogger(ProcessLogger):
         self._keep_running = False
         self.worker_thread.join()
 
-def build_cache(cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME, shuffling_buffer_size=16):
-    with open('.credentials.json') as f:
-        cred = json.load(f)
-    
+def build_cache(creds, cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME, shuffling_buffer_size=16, **kwargs):
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
+    elif cache_type == 's3_multilayer':
+        cache = MultiLayerS3WCache(
+            creds=creds,
+            run_name=run_name,
+            max_queue_size=batches_per_cache, 
+            bucket_name=bucket_name,
+            **kwargs
+        )
     elif cache_type == 'local_threaded':
         inner_cache = WCache(run_name, save_every=batches_per_cache)
         cache = ThreadedWCache(inner_cache)
     elif cache_type in ['s3', 's3_nonshuffling', 's3_threaded', 's3_threaded_nonshuffling']:
         inner_cache = S3WCache.from_credentials(
-            access_key_id=cred['AWS_ACCESS_KEY_ID'], 
-            secret=cred['AWS_SECRET'], 
+            access_key_id=creds['AWS_ACCESS_KEY_ID'], 
+            secret=creds['AWS_SECRET'], 
             run_name=run_name, 
             save_every=batches_per_cache, 
             bucket_name=bucket_name
@@ -145,6 +150,7 @@ def generate(
         num_proc=cpu_count() // 2,
         bucket_name=None,
     ):
+    raise NotImplementedError("This function is not currently supported.")
 
     with open('.credentials.json') as f:
         creds = json.load(f)
@@ -226,20 +232,8 @@ def generate(
         cache.save_mean_std(means, stds)
         cache.finalize()
 
-def build_caches(hook_locations, *args, run_name, **kwargs):
-    caches = {}
-    used_hook_ids = set()
-    for location in hook_locations:
-        hook_id = f"{location['layer']}_{location['module']}"
-        if hook_id in used_hook_ids:
-            raise ValueError(f"hook_id {hook_id} is duplicated")
-        used_hook_ids.add(hook_id)
-        hook_run_name=f"{run_name}/{hook_id}"
-        caches[(location['layer'], location['module'])] = build_cache(*args, run_name=hook_run_name, **kwargs)
-
-    return caches
-
 def vit_generate(
+        creds,
         run_name, 
         batches_per_cache,
         dataset, 
@@ -248,21 +242,16 @@ def vit_generate(
         device,
         hook_locations,
         cache_type,
+        bucket_name,
         n_samples=None,
         seed=42,
         log_every=100,
-        bucket_name=None,
         full_sequence=True,
-        num_workers=6,
+        num_data_workers=2,
+        input_tensor_shape=None,
+        num_cache_workers=5,
     ):
-
-    with open('.credentials.json') as f:
-        creds = json.load(f)
-
     os.environ['HF_TOKEN'] = creds['HF_TOKEN']
-
-    if bucket_name is None:
-        bucket_name = BUCKET_NAME
 
     torch.manual_seed(seed)
     transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
@@ -280,19 +269,25 @@ def vit_generate(
             'transformer_name': transformer_name,
             'batch_size': batch_size,
             'device': device,
-            'hook_locations': hook_locations,
             'cache_type': cache_type,
             'seed': seed,
+            'num_data_workers': num_data_workers,
+            'num_cache_workers': num_cache_workers,
+            'hook_locations': hook_locations,
         })
 
-        caches = build_caches(
-            hook_locations=hook_locations, 
+        cache = build_cache(
+            creds=creds,
             cache_type=cache_type, 
             batches_per_cache=batches_per_cache, 
             run_name=run_name, 
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+
+            num_workers=num_cache_workers,
+            input_tensor_shape=input_tensor_shape,
+            hook_locations=hook_locations, 
         )
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_data_workers)
         
         transformer.eval()
         means = {}
@@ -306,37 +301,37 @@ def vit_generate(
                 else:
                     cache_dict = transformer.cls_activations(batch)
 
-                for location, cache in caches.items():
-                    activations = cache_dict[location]
+                cache.append(cache_dict)
+
+                for location, activations in cache_dict.items():
+                    mean_acts = activations.mean(dim=0)
+                    std_acts = activations.std(dim=0)
+                    if len(mean_acts.shape) > 1:
+                        mean_acts = mean_acts.mean(dim=0)
+                        std_acts = std_acts.mean(dim=0)
+
+                    mean_acts = mean_acts.cpu()
+                    std_acts = std_acts.cpu()
                     
                     if location not in means:
-                        mean_acts = activations.mean(dim=0)
-                        std_acts = activations.std(dim=0)
-                        if len(mean_acts.shape) > 1:
-                            mean_acts = mean_acts.mean(dim=0)
-                            std_acts = std_acts.mean(dim=0)
-
-                        mean_acts = mean_acts.cpu()
-                        std_acts = std_acts.cpu()
-
                         means[location] = mean_acts
                         stds[location] = std_acts
                     else:
                         means[location] += mean_acts
                         stds[location] += std_acts
                     
-                    cache.append(activations.cpu())
 
                     if i % 100 == 0 and i > 0:
                         save_mean = means[location] / i
                         save_std = stds[location] / i
-                        # cache.save_mean_std(save_mean, save_std)
+                        cache.save_mean_std(save_mean, save_std, location)
 
                 if n_samples is not None and i * batch_size >= n_samples:
                     break
                 
                 lg.log_batch(activations.to('cpu')) # only logs the last activations
 
-            # for location, cache in caches.items():
-            #     cache.save_mean_std(means[location] / i, stds[location])
-            #     cache.finalize()
+            for location, mean in means.items():
+                std = stds[location]
+                cache.save_mean_std(mean / i, std / i, location)
+            cache.finalize()

@@ -167,12 +167,8 @@ class HookedVisionTransformer():
 class SpecifiedHookedViT(HookedVisionTransformer):
     def __init__(self, hook_locations, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for location in hook_locations:
-            assert isinstance(location, dict), "Each hook location must be a dictionary."
-            assert 'layer' in location, "Each hook location must have a key 'layer'."
-            assert 'module' in location, "Each hook location must have a key 'module'."
         
-        self._hook_locations = [(location['layer'], location['module']) for location in hook_locations]
+        self._hook_locations = hook_locations
 
     def all_activations(self, batch):
         inputs = self.processor(images=batch, text = "", return_tensors="pt", padding = True).to(self.model.device)

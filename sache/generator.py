@@ -13,7 +13,6 @@ from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache, MultiLayerS
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
-from sache.constants import BUCKET_NAME
 from sache.hookedvit import SpecifiedHookedViT
 
 class GenerationLogger(ProcessLogger):
@@ -95,7 +94,7 @@ class GenerationLogger(ProcessLogger):
         self._keep_running = False
         self.worker_thread.join()
 
-def build_cache(creds, cache_type, batches_per_cache, run_name, bucket_name=BUCKET_NAME, shuffling_buffer_size=16, **kwargs):
+def build_cache(creds, cache_type, batches_per_cache, run_name, bucket_name, shuffling_buffer_size=16, **kwargs):
     if cache_type == 'local':
         cache = WCache(run_name, save_every=batches_per_cache)
     elif cache_type == 's3_multilayer':
@@ -156,10 +155,6 @@ def generate(
         creds = json.load(f)
 
     os.environ['HF_TOKEN'] = creds['HF_TOKEN']
-
-
-    if bucket_name is None:
-        bucket_name = BUCKET_NAME
 
     torch.manual_seed(seed)
     transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)

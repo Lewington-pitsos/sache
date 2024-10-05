@@ -14,7 +14,7 @@ import aiohttp
 import signal
 from multiprocessing import Value, Process, Queue
 import multiprocessing as mp
-from sache.constants import BUCKET_NAME, MB, OUTER_CACHE_DIR, INNER_CACHE_DIR
+from sache.constants import MB, OUTER_CACHE_DIR, INNER_CACHE_DIR
 import multiprocessing
 
 
@@ -74,7 +74,7 @@ class ThreadedWCache:
         self._run_in_thread(None)  # Signal the worker thread to exit
         self.worker_thread.join()
 
-def _metadata_path(run_name):
+def metadata_path(run_name):
     return f'{run_name}/metadata.json'
 
 def build_s3_client(creds):
@@ -230,7 +230,7 @@ class MultiLayerS3WCache():
         self.s3_client.put_object(
             Body=json.dumps(self.metadata[location]), 
             Bucket=self.bucket_name, 
-            Key=_metadata_path(get_location_name(self.run_name, location))
+            Key=metadata_path(get_location_name(self.run_name, location))
         )
 
     def save_mean_std(self, mean, std, location):
@@ -254,7 +254,7 @@ class S3WCache():
         s3_client = boto3.client('s3', aws_access_key_id=access_key_id, aws_secret_access_key=secret)
         return S3WCache(s3_client, *args, **kwargs)
 
-    def __init__(self, s3_client, run_name, save_every=1, bucket_name=BUCKET_NAME):
+    def __init__(self, s3_client, run_name, bucket_name, save_every=1):
         self.save_every = save_every
         self.run_name = run_name
         self._in_mem = []
@@ -285,7 +285,7 @@ class S3WCache():
         return None
     
     def _save_metadata(self):
-        self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=self.bucket_name, Key=_metadata_path(self.run_name))
+        self.s3_client.put_object(Body=json.dumps(self.metadata), Bucket=self.bucket_name, Key=metadata_path(self.run_name))
 
     def save_mean_std(self, mean, std):
         self.metadata['mean'] = mean.tolist()
@@ -438,7 +438,7 @@ class S3RCache():
     def __init__(self, 
                  s3_client, 
                  s3_prefix, 
-                 bucket_name=BUCKET_NAME, 
+                 bucket_name, 
                  device='cpu', 
                  concurrency=100, 
                  chunk_size=MB*16, 
@@ -464,7 +464,7 @@ class S3RCache():
         self.paths = paths
         self._s3_paths = self._list_s3_files()
 
-        response = self.s3_client.get_object(Bucket=bucket_name, Key=_metadata_path(s3_prefix))
+        response = self.s3_client.get_object(Bucket=bucket_name, Key=metadata_path(s3_prefix))
         content = response['Body'].read()
         self.metadata = json.loads(content)
         self._activation_dtype = eval(self.metadata['dtype'])
@@ -516,7 +516,7 @@ class S3RCache():
             return self.paths
 
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
-        _metadata = _metadata_path(self.s3_prefix)
+        _metadata = metadata_path(self.s3_prefix)
         paths = [f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
 
         return sorted(paths)

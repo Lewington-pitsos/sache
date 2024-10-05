@@ -17,8 +17,8 @@ from sache import FileDataset
 # python scripts/vit_generate.py --run_name "ViT_100_000" --n_samples=100000 --batch_size=2048 --log_every=0
 
 def main(
+        bucket_name,
         run_name=None, 
-        bucket_name=None, 
         n_samples=None,
         transformer_name='laion/CLIP-ViT-L-14-laion2B-s32B-b82K', # 24 layers in total
         batch_size=1024,
@@ -27,6 +27,8 @@ def main(
         full_sequence=False,
         n_hooks=None,
         input_tensor_shape=None,
+        num_cache_workers=4,
+        num_data_workers=3
     ):
     if run_name is None:
         run_name = randomname.generate('adj/', 'n/')
@@ -69,6 +71,8 @@ def main(
         bucket_name=bucket_name,
         full_sequence=full_sequence,
         input_tensor_shape=(batch_size, *input_tensor_shape) if input_tensor_shape else None,
+        num_cache_workers=num_cache_workers,
+        num_data_workers=num_data_workers
     )
 
 if __name__ == '__main__':

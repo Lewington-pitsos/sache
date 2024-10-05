@@ -24,13 +24,20 @@ class FileDataset(IterableDataset):
         for img_path in self._get_image_paths():
             hash_val = int(hashlib.sha1(img_path.encode('utf-8')).hexdigest(), 16)
             if hash_val % num_workers == worker_id:
-                yield self._get_image_data(img_path)
+                try:
+                    yield self._get_image_data(img_path)
+                except Exception as e:
+                    print(f'Error reading image {img_path}: {e}')
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
             for img_path in self._get_image_paths():
-                yield self._get_image_data(img_path)
+                try:
+                    yield self._get_image_data(img_path)
+                except Exception as e:
+                    print(f'Error reading image {img_path}: {e}')
+                
         else:
             worker_id = worker_info.id
             num_workers = worker_info.num_workers

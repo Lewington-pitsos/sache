@@ -1,6 +1,4 @@
 from img2dataset import download
-import shutil
-import os
 from pyspark.sql import SparkSession  # pylint: disable=import-outside-toplevel
 
 if __name__ == "__main__":

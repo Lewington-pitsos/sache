@@ -153,7 +153,6 @@ yarl = "1.9.4"
 zstandard = "0.22.0"
 pyspark = "^3.5.3"
 torchvision = "^0.19.1"
-img2dataset = "*"
 
 
 [build-system]

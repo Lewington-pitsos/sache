@@ -1,9 +1,8 @@
-from numpy import isin
 import torch
 from transformers import CLIPProcessor, CLIPModel
 from typing import Callable
 from contextlib import contextmanager
-from typing import List, Union, Dict, Tuple
+from typing import List, Tuple
 from functools import partial
 from torch import Tensor
 from torch.nn import functional as F

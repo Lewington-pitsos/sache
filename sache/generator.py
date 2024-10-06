@@ -4,7 +4,6 @@ import json
 import os
 import time
 import torch
-from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 from multiprocessing import cpu_count
 
@@ -130,101 +129,6 @@ def build_cache(creds, cache_type, batches_per_cache, run_name, bucket_name, shu
 
     
     return cache
-
-def generate(
-        run_name, 
-        batches_per_cache,
-        dataset, 
-        transformer_name, 
-        max_length, 
-        batch_size, 
-        text_column_name, 
-        device,
-        layer,
-        hook_name,
-        cache_type,
-        seed=42,
-        log_every=100,
-        num_proc=cpu_count() // 2,
-        bucket_name=None,
-    ):
-    raise NotImplementedError("This function is not currently supported.")
-
-    with open('.credentials.json') as f:
-        creds = json.load(f)
-
-    os.environ['HF_TOKEN'] = creds['HF_TOKEN']
-
-    torch.manual_seed(seed)
-    transformer = HookedSAETransformer.from_pretrained(transformer_name, device=device)
-
-    if log_every is not None:
-        logger = GenerationLogger(run_name, transformer.tokenizer, log_every=log_every)
-    else:
-        logger = NOOPLogger()
-
-    
-
-    with logger as lg:
-        lg.log({
-            'event': 'start_generating',
-            'run_name': run_name,
-            'bs_per_cache': batches_per_cache,
-            'transformer_name': transformer_name,
-            'max_length': max_length,
-            'batch_size': batch_size,
-            'text_column_name': text_column_name,
-            'device': device,
-            'layer': layer,
-            'hook_name': hook_name,
-            'cache_type': cache_type,
-            'seed': seed,
-        })
-
-        cache = build_cache(cache_type, batches_per_cache, run_name, bucket_name=bucket_name)
-
-        dataset = chunk_and_tokenize(
-            dataset, 
-            transformer.tokenizer, 
-            text_key=text_column_name, 
-            max_seq_len=max_length,
-            num_proc=num_proc
-        )
-        
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-        
-        transformer.eval()
-        means = None
-        stds = None
-        with torch.no_grad():
-            for i, batch in enumerate(dataloader):
-                input_ids = batch['input_ids'].to(device)
-
-                _, activations = transformer.run_with_cache(
-                    input_ids, 
-                    prepend_bos=False, # each sample is actually multiple concatenated samples
-                    stop_at_layer=layer
-                )
-                activations = activations[hook_name]
-
-                if means is None:
-                    means = activations.mean(dim=(0, 1)).to('cpu')
-                    stds = activations.std(dim=(0, 1)).to('cpu')
-                else:
-                    means += activations.mean(dim=(0, 1)).to('cpu')
-                    stds += activations.std(dim=(0, 1)).to('cpu')
-
-                lg.log_batch(activations, input_ids)
-
-                activations = activations.to('cpu')
-                acts_and_ids = torch.concat([activations, input_ids.unsqueeze(2).to('cpu')], dim=2)
-                cache.append(acts_and_ids)
-
-            means /= i
-            stds /= i
-        
-        cache.save_mean_std(means, stds)
-        cache.finalize()
 
 def vit_generate(
         creds,

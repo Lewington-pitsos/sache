@@ -8,7 +8,6 @@ from sae_lens import HookedSAETransformer
 from torch.utils.data import DataLoader 
 from multiprocessing import cpu_count
 
-from sache import cache
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache, MultiLayerS3WCache
 from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger

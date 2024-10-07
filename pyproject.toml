@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sache"
-version = "0.1.4"
+version = "0.1.5"
 description = ""
 authors = ["Louka Ewington-Pitsos <lewingtonpitsos@gmail.com>"]
 readme = "README.md"

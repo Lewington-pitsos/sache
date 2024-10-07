@@ -1,14 +1,11 @@
 import threading
 import psutil
-import json
 import os
 import time
 import torch
 from torch.utils.data import DataLoader 
-from multiprocessing import cpu_count
 
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache, MultiLayerS3WCache
-from sache.tok import chunk_and_tokenize
 from sache.log import ProcessLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
 from sache.hookedvit import SpecifiedHookedViT
@@ -148,6 +145,7 @@ def vit_generate(
         num_data_workers=2,
         input_tensor_shape=None,
         num_cache_workers=5,
+        print_logs=False,
     ):
     os.environ['HF_TOKEN'] = creds['HF_TOKEN']
 
@@ -155,7 +153,7 @@ def vit_generate(
     transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
 
     if log_every is not None:
-        logger = GenerationLogger(run_name, None, log_every=log_every)
+        logger = GenerationLogger(run_name, None, log_every=log_every, print_logs=print_logs)
     else:
         logger = NOOPLogger()
 

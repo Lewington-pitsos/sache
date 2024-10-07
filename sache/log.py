@@ -10,8 +10,9 @@ import wandb
 LOG_DIR = 'log'
 
 class ProcessLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None, log_id=None):
+    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None, log_id=None, print_logs=False):
         self.run_name = run_name
+        self.print_logs = print_logs
 
         if log_id is not None:
             self.log_id = log_id + '_' + str(uuid4())[:6]
@@ -52,6 +53,9 @@ class ProcessLogger():
 
         with open(self._log_filename(), 'a') as f:
             f.write(json.dumps(data) + '\n')
+
+        if self.print_logs:
+            print(data)
 
     def log_gpu_usage(self):
         if torch.cuda.is_available():

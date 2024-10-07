@@ -353,15 +353,6 @@ def test_multilayer_s3_wcache_metadata(s3_client):
         
         expected_metadata[location] = metadata
 
-    # Compute mean and std for each location
-    mean_std = {}
-    for location, activations in activation_dict.items():
-        mean = activations.mean()
-        std = activations.std()
-        mean_std[location] = {'mean': mean, 'std': std}
-        cache.save_mean_std(mean, std, location)
-
-    # Finalize to ensure all uploads are complete
     cache.finalize()
 
     # Helper function to construct location name
@@ -393,9 +384,3 @@ def test_multilayer_s3_wcache_metadata(s3_client):
             if type(value) == tuple and type(metadata[key]) == list:
                 value = list(value)
             assert metadata[key] == value, f"Metadata mismatch for key '{key}' in location {loc_name}."
-
-        # Verify mean and std in metadata
-        assert 'mean' in metadata, f"'mean' not found in metadata for location {loc_name}."
-        assert 'std' in metadata, f"'std' not found in metadata for location {loc_name}."
-        assert metadata['mean'] == mean_std[location]['mean'], f"Mean value mismatch for location {loc_name}."
-        assert metadata['std'] == mean_std[location]['std'], f"Std value mismatch for location {loc_name}."

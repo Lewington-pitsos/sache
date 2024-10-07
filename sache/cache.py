@@ -233,12 +233,6 @@ class MultiLayerS3WCache():
             Key=metadata_path(get_location_name(self.run_name, location))
         )
 
-    def save_mean_std(self, mean, std, location):
-        self.metadata[location]['mean'] = mean.tolist()
-        self.metadata[location]['std'] = std.tolist()
-
-        self._save_metadata(location)
-
     def finalize(self):
         self.stop()
 

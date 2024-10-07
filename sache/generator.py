@@ -188,8 +188,6 @@ def vit_generate(
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_data_workers)
         
         transformer.eval()
-        means = {}
-        stds = {}
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
@@ -201,35 +199,9 @@ def vit_generate(
 
                 cache.append(cache_dict)
 
-                for location, activations in cache_dict.items():
-                    mean_acts = activations.mean(dim=0)
-                    std_acts = activations.std(dim=0)
-                    if len(mean_acts.shape) > 1:
-                        mean_acts = mean_acts.mean(dim=0)
-                        std_acts = std_acts.mean(dim=0)
-
-                    mean_acts = mean_acts.cpu()
-                    std_acts = std_acts.cpu()
-                    
-                    if location not in means:
-                        means[location] = mean_acts
-                        stds[location] = std_acts
-                    else:
-                        means[location] += mean_acts
-                        stds[location] += std_acts
-                    
-
-                    if i % 100 == 0 and i > 0:
-                        save_mean = means[location] / i
-                        save_std = stds[location] / i
-                        cache.save_mean_std(save_mean, save_std, location)
-
                 if n_samples is not None and i * batch_size >= n_samples:
                     break
-                
-                lg.log_batch(activations.to('cpu')) # only logs the last activations
 
-            for location, mean in means.items():
-                std = stds[location]
-                cache.save_mean_std(mean / i, std / i, location)
+                lg.log_batch(cache_dict[hook_locations[-1]].to('cpu')) # only logs the last activations
+
             cache.finalize()

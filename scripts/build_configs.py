@@ -2,6 +2,8 @@ import json
 
 baseline =        {
     "wandb_project": "vit-sae-multilayer",
+    "data_bucket": "sae-activations",
+    "log_bucket": "sae-activations",
     "n_feats": 65536,
     "n_tokens": 5_000_000_000,
     "batch_size": 16384,
@@ -26,5 +28,5 @@ for layer in ['11_resid', '14_resid', '17_resid', '20_resid', '22_resid', '2_res
     all_configs.append(clone)
 
 print(f'Generated {len(all_configs)} configs')
-with open('cruft/flop_switch_configs.json', 'w') as f:
+with open('cruft/configs.json', 'w') as f:
     json.dump(all_configs, f, indent=2)

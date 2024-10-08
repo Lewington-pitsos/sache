@@ -25,21 +25,16 @@ def save_sae(sae, n_iter, data_name, name, base_dir='cruft'):
 
     torch.save(sae, os.path.join(model_dir, f'{n_iter}.pt'))
 
-def flatten_activations(t, seq_len, skip_first_n, filter_ma, is_ma, d_in, device):
+def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
         return t, torch.zeros(t.shape[0], dtype=torch.int64, device=device)
 
     positions = torch.linspace(0, seq_len - skip_first_n - 1, 0, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
-    t = t[:, :, :d_in].flatten(0, 1) # (n_samples * (seq_len - 1), d_in)
-    if filter_ma:
-        flat_ma = is_ma.flatten(0, 1)
-        t = t[~flat_ma]
-        positions = positions[~flat_ma]
-
+    t = t[:, :, :d_in].flatten(0, 1)
     return t, positions
 
-def main(
-        data_name = 'merciless-citadel',
+def train(
+        data_name,
         n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
@@ -62,7 +57,6 @@ def main(
         seq_len=1024,
         skip_first_n=0,
         batch_norm=True,
-        filter_ma=False,
         cache_buffer_size=3,
         n_cache_workers=4,
         architecture='topk',
@@ -126,7 +120,6 @@ def main(
             'privilege_weighting': privilege_weighting,
             'n_tokens': n_tokens,
             'n_feats': n_feats,
-            'filter_ma': filter_ma,
             'n_experts': n_experts,
             'inner_bs': batch_size,
             'outer_bs': outer_batch_size,
@@ -162,9 +155,8 @@ def main(
         for acts in cache:
             acts = acts.to(device)  # (n_samples, seq_len, d_in)
             acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
-            is_ma = acts.max(dim=-1).values > 1e3
 
-            acts, positions = flatten_activations(acts, seq_len, skip_first_n, filter_ma, is_ma, d_in, device)
+            acts, positions = flatten_activations(acts, seq_len, skip_first_n, d_in, device)
 
             if secondary_input is not None:
                 token_ids = acts[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
@@ -203,7 +195,7 @@ def main(
                 
                 with torch.no_grad():
                     sample_mse = delta_pow.mean(dim=1)
-                    if skip_first_n > 0 or filter_ma:
+                    if skip_first_n > 0:
                         mse_sum = torch.bincount(batch_positions, weights=sample_mse)
                         position_counts = torch.bincount(batch_positions)
                         position_mse = mse_sum / torch.clamp(position_counts, min=1)
@@ -256,7 +248,6 @@ def main(
                     position_mse=position_mse,
                     explained_variance=explained_variance,
                     variance_prop_mse=variance_prop_mse,
-                    massive_activations=is_ma.to_sparse().indices(),
                 )
 
                 
@@ -296,4 +287,4 @@ def main(
             save_sae(sae, token_count, data_name, lg.log_id)
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire(train)

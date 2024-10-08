@@ -28,10 +28,8 @@ resource "aws_security_group" "allow_ssh_sache" {
 
 resource "aws_instance" "sache" {
   ami           = "ami-0197c13a4f68c9360"
-
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer.key_name
-
   security_groups = [aws_security_group.allow_ssh_sache.name]
 
   tags = {
@@ -39,9 +37,7 @@ resource "aws_instance" "sache" {
   }
 
   root_block_device {
-    volume_size           = 5000
+    volume_size           = 2000
     volume_type           = "gp3"      
-    iops                  = 6000       
-    throughput            = 500     
   }
 }

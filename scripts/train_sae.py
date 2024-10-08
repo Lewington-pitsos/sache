@@ -40,7 +40,6 @@ def train(
         n_feats = 24576,
         d_in = 768,
         batch_size = 4096,
-        outer_batch_size = 8192 * 32,
         n_experts = None,
         l1_coefficient = 2e-3,
         privilege_weighting = 1e-2,
@@ -64,10 +63,6 @@ def train(
         geom_median_file=None,
         save_every=2_500_000,
     ):
-
-    if outer_batch_size < batch_size:
-        outer_batch_size = batch_size
-
     with open('.credentials.json') as f:
         credentials = json.load(f)
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
@@ -121,8 +116,7 @@ def train(
             'n_tokens': n_tokens,
             'n_feats': n_feats,
             'n_experts': n_experts,
-            'inner_bs': batch_size,
-            'outer_bs': outer_batch_size,
+            'batch_size': batch_size,
             'learning_rate': lr,
             'l1_coefficient': l1_coefficient,
             'lr_warmup_steps': lr_warmup_steps,
@@ -142,7 +136,7 @@ def train(
         tokens_per_file = cache.samples_per_file * seq_len
 
         if shuffle:
-            cache = ShufflingRCache(cache, batch_size=outer_batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
+            cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
         else:
             pass
 

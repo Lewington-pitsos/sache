@@ -147,16 +147,15 @@ def vit_generate(
         num_cache_workers=5,
         print_logs=False,
     ):
-    os.environ['HF_TOKEN'] = creds['HF_TOKEN']
 
     torch.manual_seed(seed)
-    transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
-
+    os.environ['HF_TOKEN'] = creds['HF_TOKEN']
     if log_every is not None:
         logger = GenerationLogger(run_name, None, log_every=log_every, print_logs=print_logs)
     else:
         logger = NOOPLogger()
 
+    transformer = SpecifiedHookedViT(hook_locations, transformer_name, device=device)
     with logger as lg:
         lg.log({
             'event': 'start_generating',

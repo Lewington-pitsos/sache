@@ -50,7 +50,7 @@ def main(
         l1_coefficient = 2e-3,
         privilege_weighting = 1e-2,
         lr = 3e-4,
-        tokens_till_latent_dies = 2_000_000,
+        tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
         use_wandb=True,
         log_bucket=BUCKET_NAME,

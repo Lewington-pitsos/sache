@@ -11,8 +11,8 @@ from sache.shuffler import ShufflingWCache
 from sache.hookedvit import SpecifiedHookedViT
 
 class GenerationLogger(ProcessLogger):
-    def __init__(self, run_name, tokenizer, log_every=100):
-        super().__init__(run_name)
+    def __init__(self, run_name, tokenizer, *args, log_every=100,  **kwargs):
+        super().__init__(run_name, *args, **kwargs)
         self.tokenizer = tokenizer
         self.log_every = log_every
 

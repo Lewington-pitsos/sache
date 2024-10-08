@@ -37,7 +37,7 @@ class ProcessLogger():
 
         if use_wandb:
             if wandb_project is None:
-                wandb_project = run_name
+                wandb_project = self.run_name
             
             self.wandb_project = wandb_project
             wandb.init(project=wandb_project, name=self.log_id)

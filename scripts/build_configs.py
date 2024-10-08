@@ -1,41 +1,29 @@
 import json
 
 baseline =        {
-    "wandb_project": "vit-switch",
+    "wandb_project": "vit-sae-multilayer",
     "n_feats": 65536,
-    "n_tokens": 3_000_000,
-    "batch_size": 1024,
+    "n_tokens": 5_000_000_000,
+    "batch_size": 16384,
     "k": 32,
-    "lr": 0.0004,
-    "l1_coefficient": 0.00008,
-    'data_name': "ViT-3mil",
+    "lr": 0.001,
     "d_in": 1024,
-    "seq_len": 1,
+    "seq_len": 257,
     "cache_buffer_size": 3,
     "n_cache_workers": 4,
     "batch_norm": False,
     'architecture': 'topk',
-    "save_every": 4_000_000
+    "save_every": 500_000_000
 }
 
 all_configs = []
 
-# for l1 in [ 2e-05, 3e-05, 4e-05, 5e-05, 6e-05, 8e-05, 9e-05, 0.00012, 0.00016, 0.0002]:
-#     config = baseline.copy()
-#     config['l1_coefficient'] = l1
-#     config['architecture'] = 'relu'
-#     config['name'] = f'relu-l1-{l1}'
-#     all_configs.append(config)
 
-for k in [8, 16, 64, 128, 256]:
-    config = baseline.copy()
-    config['k'] = k
-    for n_experts, n_feats in zip([None, 2, 4], [16384, 32768, 65536]):
-        config = config.copy()
-        config['n_experts'] = n_experts
-        config['n_feats'] = n_feats
-        config['name'] = f'flop-topkk-{k}-experts-{n_experts}'
-        all_configs.append(config)
+for layer in ['11_resid', '14_resid', '17_resid', '20_resid', '22_resid', '2_resid', '5_resid', '8_resid']:
+    clone = baseline.copy()
+    clone['data_name'] = f"multilayer/{layer}"
+    clone['name'] = layer
+    all_configs.append(clone)
 
 print(f'Generated {len(all_configs)} configs')
 with open('cruft/flop_switch_configs.json', 'w') as f:

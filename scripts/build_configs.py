@@ -6,9 +6,9 @@ baseline =        {
     "log_bucket": "sae-activations",
     "n_feats": 65536,
     "n_tokens": 1_000_000_000,
-    "batch_size": 16384,
+    "batch_size": 16448 * 2,
     "k": 32,
-    "lr": 0.001,
+    "lr": 0.002,
     "d_in": 1024,
     "seq_len": 257,
     "cache_buffer_size": 3,
@@ -32,18 +32,19 @@ all_configs = []
 #     json.dump(all_configs, f, indent=2)
 
 
-
 for layer in ['22_resid']:
     for shuffle in [True, False]:
-        clone = baseline.copy()
-        clone['data_name'] = f"multilayer/{layer}"
-        clone['wandb_project'] = 'test-vit-sae-multilayer'
-        clone['name'] = 'test-' + layer
-        clone['n_tokens'] = 600_000
-        clone['shuffle'] = shuffle
-        clone['save_every'] = 100_000
-        clone['n_tokens'] = 1_000_000
-        all_configs.append(clone)
+        for n_experts in [None, 8]:
+            clone = baseline.copy()
+            clone['data_name'] = f"CLIP-ViT-L-14/{layer}"
+            clone['wandb_project'] = 'test-vit-sae-multilayer'
+            clone['name'] = 'test-' + layer
+            clone['n_tokens'] = 600_000
+            clone['shuffle'] = shuffle
+            clone['save_every'] = None
+            clone['n_tokens'] = 3_000_000
+            clone['n_experts'] = n_experts
+            all_configs.append(clone)
 
 filename = 'cruft/test_configs.json'
 print(f'Generated {len(all_configs)} configs at {filename}')

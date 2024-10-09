@@ -29,7 +29,7 @@ def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
         return t, torch.zeros(t.shape[0], dtype=torch.int64, device=device)
 
-    positions = torch.linspace(0, seq_len - skip_first_n - 1, 0, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+    positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
     t = t[:, :, :d_in].flatten(0, 1)
     return t, positions
 
@@ -136,7 +136,7 @@ def train(
         tokens_per_file = cache.samples_per_file * seq_len
 
         if shuffle:
-            cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 32, d_in=d_in,  dtype=torch.float32)
+            cache = ShufflingRCache(cache, batch_size=tokens_per_file, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
         else:
             pass
 
@@ -243,8 +243,6 @@ def train(
                     explained_variance=explained_variance,
                     variance_prop_mse=variance_prop_mse,
                 )
-
-                
 
                 if token_count >= n_tokens:
                     overall_end = time.time()

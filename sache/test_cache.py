@@ -194,6 +194,27 @@ def test_shuffling_read_cache():
 
     assert i == 14
 
+
+def test_shuffling_read_cache_uneven_batch_size():
+    torch.manual_seed(42)
+
+    batch_size = 5
+    seq_len = 8
+    d_in = 16
+    
+    data = [torch.ones(batch_size, seq_len, d_in, dtype=torch.float32) * i for i in range(15)]
+    mc = MockCache(data)
+
+    sc = ShufflingRCache(mc, seq_len * 29, batch_size * seq_len, d_in, dtype=torch.float32)
+
+    for i, batch in enumerate(sc):
+        assert batch.shape == (batch_size * seq_len, d_in)
+        assert batch.isnan().sum().item() == 0
+        assert batch.std().item() > 1.0
+
+    assert i == 14
+
+
 def test_small_bs_shuffling_read_cache():
     torch.manual_seed(42)
 

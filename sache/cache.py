@@ -483,10 +483,6 @@ class S3RCache():
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
 
-
-        signal.signal(signal.SIGTERM, self._catch_stop)
-        signal.signal(signal.SIGINT, self._catch_stop)
-
     @property
     def samples_per_file(self):
         return self.metadata['batches_per_file'] * self.metadata['batch_size']
@@ -588,7 +584,6 @@ class S3RCache():
 
             time.sleep(0.25)
 
-
         for p in self._running_processes:
             p.join() # still join to make sure all resources are cleaned up
 
@@ -597,8 +592,6 @@ class S3RCache():
 
 class ShufflingRCache():
     def __init__(self, cache, buffer_size, batch_size, d_in, dtype):
-        assert buffer_size % batch_size == 0, f'buffer_size must be a multiple of batch_size, got buffer_size: {buffer_size}, batch_size: {batch_size}'
-
         self.cache = cache
         self.buffer = torch.empty((buffer_size, d_in), dtype=dtype)
         self.batch_size = batch_size
@@ -618,7 +611,7 @@ class ShufflingRCache():
         self.cache.finalize()
 
     def _full(self):
-        return self._current_idx == self.buffer_size
+        return self._current_idx >= self.buffer_size - self.batch_size
 
     def _add_to_buffer(self, activations):
         if len(activations.shape) == 3:
@@ -628,9 +621,6 @@ class ShufflingRCache():
         else:
             raise ValueError(f"tried to save unexpected activations shape {activations.shape}")
 
-
-        if self.buffer_size % flat_activations.shape[0] != 0:
-            raise ValueError(f'Buffer size {self.buffer_size} must always be divisible by flattened activations shape, but got: {flat_activations.shape}')
 
         next_idx = self._current_idx + flat_activations.shape[0]
         if next_idx > self.buffer_size:
@@ -658,7 +648,7 @@ class ShufflingRCache():
             self.buffer[:self._current_idx] = self.buffer[torch.randperm(self._current_idx)]
 
     def _half_full(self):
-        return self._current_idx > self.buffer_size // 2
+        return self._current_idx >= self.buffer_size / 2
 
     def __next__(self):
         if self._cache_is_empty:

@@ -20,7 +20,8 @@ class SacheLogger():
                 use_wandb=False, 
                 wandb_project=None, 
                 log_id=None, 
-                print_logs=False
+                print_logs=False,
+                credentials=None,
         ):
         self.run_name = run_name
         self.print_logs = print_logs
@@ -49,6 +50,9 @@ class SacheLogger():
             self.s3_client = s3_client
 
         if use_wandb:
+            if credentials is not None:
+                os.environ["WANDB_API_KEY"] = credentials['WANDB_API_KEY']
+
             if wandb_project is None:
                 wandb_project = self.run_name
             

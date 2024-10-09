@@ -11,7 +11,6 @@ from io import BytesIO
 import time
 import asyncio
 import aiohttp
-import signal
 from multiprocessing import Value, Process, Queue
 import multiprocessing as mp
 from sache.constants import MB, OUTER_CACHE_DIR, INNER_CACHE_DIR

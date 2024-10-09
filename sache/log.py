@@ -1,6 +1,7 @@
 import time
 import json
 import os
+import trace
 from uuid import uuid4
 import boto3
 import torch
@@ -10,9 +11,20 @@ import wandb
 LOG_DIR = 'log'
 
 class SacheLogger():
-    def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None, log_id=None, print_logs=False):
+    def __init__(
+                self, 
+                run_name,
+                base_log_dir=LOG_DIR, 
+                s3_backup_bucket=None, 
+                s3_client=None, 
+                use_wandb=False, 
+                wandb_project=None, 
+                log_id=None, 
+                print_logs=False
+        ):
         self.run_name = run_name
         self.print_logs = print_logs
+        self.log_dir = os.path.join(base_log_dir, self.run_name)
 
         if log_id is not None:
             self.log_id = log_id + '_' + str(uuid4())[:6]
@@ -24,15 +36,16 @@ class SacheLogger():
 
         self.use_wandb = use_wandb
 
-        if not os.path.exists(LOG_DIR):
-            os.makedirs(LOG_DIR, exist_ok=True)
+        print('Logging to-----', self.log_dir)
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir, exist_ok=True)
 
         print('Logging to', self._log_filename())
 
         self.s3_backup_bucket = s3_backup_bucket
         if s3_backup_bucket is not None:
             assert s3_client is not None, 's3_client must be provided if s3_backup_bucket is provided'
-            self.s3_backup_path = os.path.join(LOG_DIR, self.run_name, self.log_id + '.jsonl')
+            self.s3_backup_path = os.path.join(self.log_dir, self.log_id + '.jsonl')
             self.s3_client = s3_client
 
         if use_wandb:
@@ -43,7 +56,7 @@ class SacheLogger():
             wandb.init(project=wandb_project, name=self.log_id)
 
     def _log_filename(self):
-        return os.path.join(LOG_DIR,  self.run_name + '_' + self.log_id + '.jsonl')
+        return os.path.join(self.log_dir, self.log_id + '.jsonl')
 
     def _log_local(self, data):
         if 'timestamp' not in data:
@@ -98,8 +111,9 @@ class SacheLogger():
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.finalize()
-        if exc_type:
-            print(f"An error occurred: {exc_value}")
+            # print the traceback
+            
+
 
 def download_logs(bucket_name, s3_folder_prefix=LOG_DIR, local_download_path=LOG_DIR):
     # Load credentials

@@ -41,8 +41,11 @@ for layer in ['22_resid']:
         clone['name'] = 'test-' + layer
         clone['n_tokens'] = 600_000
         clone['shuffle'] = shuffle
+        clone['save_every'] = 100_000
+        clone['n_tokens'] = 1_000_000
         all_configs.append(clone)
 
-print(f'Generated {len(all_configs)} configs')
-with open('cruft/test_configs.json', 'w') as f:
+filename = 'cruft/test_configs.json'
+print(f'Generated {len(all_configs)} configs at {filename}')
+with open(filename, 'w') as f:
     json.dump(all_configs, f, indent=2)

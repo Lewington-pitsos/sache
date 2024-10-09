@@ -136,7 +136,7 @@ def train(
         tokens_per_file = cache.samples_per_file * seq_len
 
         if shuffle:
-            cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 4, d_in=d_in,  dtype=torch.float32)
+            cache = ShufflingRCache(cache, batch_size=batch_size, buffer_size=tokens_per_file * 32, d_in=d_in,  dtype=torch.float32)
         else:
             pass
 

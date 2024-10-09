@@ -9,7 +9,7 @@ import wandb
 
 LOG_DIR = 'log'
 
-class ProcessLogger():
+class SacheLogger():
     def __init__(self, run_name, s3_backup_bucket=None, s3_client=None, use_wandb=False, wandb_project=None, log_id=None, print_logs=False):
         self.run_name = run_name
         self.print_logs = print_logs

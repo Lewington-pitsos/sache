@@ -6,11 +6,11 @@ import torch
 from torch.utils.data import DataLoader 
 
 from sache.cache import S3WCache, WCache, NoopCache, ThreadedWCache, MultiLayerS3WCache
-from sache.log import ProcessLogger, NOOPLogger
+from sache.log import SacheLogger, NOOPLogger
 from sache.shuffler import ShufflingWCache
 from sache.hookedvit import SpecifiedHookedViT
 
-class GenerationLogger(ProcessLogger):
+class GenerationLogger(SacheLogger):
     def __init__(self, run_name, tokenizer, *args, log_every=100,  **kwargs):
         super().__init__(run_name, *args, **kwargs)
         self.tokenizer = tokenizer

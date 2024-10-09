@@ -7,6 +7,9 @@ from sache.cache import S3WCache, S3RCache, RBatchingCache, ShufflingRCache, Mul
 import torch
 import boto3
 import pytest
+import time
+from unittest import mock
+
 
 def file_exists_on_aws(client, bucket_name, prefix):
     response = client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -384,3 +387,44 @@ def test_multilayer_s3_wcache_metadata(s3_client):
             if type(value) == tuple and type(metadata[key]) == list:
                 value = list(value)
             assert metadata[key] == value, f"Metadata mismatch for key '{key}' in location {loc_name}."
+
+
+
+
+def test_multi_layer_s3wcache_cleanup_on_exception():
+    """
+    Test that MultiLayerS3WCache properly terminates all child processes when an exception occurs.
+    """
+    creds = {'AWS_ACCESS_KEY_ID': 'dummy_key', 'AWS_SECRET': 'dummy_secret'}
+    hook_locations = [('layer1', 'resid'), ('layer2', 'resid')]
+    run_name = 'test_run'
+    max_queue_size = 10
+    input_tensor_shape = (1024, 768)  # Example shape
+    num_workers = 2
+    bucket_name = 'test_bucket'
+
+    # Patch the worker_process to use dummy_worker instead for testing
+        # Use pytest's raises to expect an exception
+    try:
+        with MultiLayerS3WCache(
+            creds=creds,
+            hook_locations=hook_locations,
+            run_name=run_name,
+            max_queue_size=max_queue_size,
+            input_tensor_shape=input_tensor_shape,
+            num_workers=num_workers,
+            bucket_name=bucket_name
+        ) as cache:
+            # Simulate some work by putting items into the queue
+            for i in range(max_queue_size):
+                cache.to_upload.put((i, 'layer1'))
+
+            # Allow some time for workers to process
+            time.sleep(1)
+
+            # Intentionally raise an exception to trigger cleanup
+            raise ValueError("Intentional error for testing.")
+    except ValueError:
+        for worker in cache.workers:
+            worker.join(timeout=1)  # Wait briefly for process to terminate
+            assert not worker.is_alive(), f"Worker {worker.name} should have been terminated."

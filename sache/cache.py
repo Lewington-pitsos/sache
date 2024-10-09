@@ -125,7 +125,7 @@ def get_location_name(run_name, location):
     layer, module = location
     return f'{run_name}/{layer}_{module}'
 
-class MultiLayerS3WCache():
+class MultiLayerS3WCache:
     def __init__(self, 
                  creds, 
                  hook_locations, 
@@ -134,8 +134,7 @@ class MultiLayerS3WCache():
                  input_tensor_shape, 
                  num_workers, 
                  bucket_name,
-                 dtype=torch.float32, 
-        ):
+                 dtype=torch.float32):
         self.s3_client = build_s3_client(creds)
         self.run_name = run_name
         self.bucket_name = bucket_name
@@ -148,7 +147,6 @@ class MultiLayerS3WCache():
             self.metadata[hook_location] = None
 
         self._buffer = torch.empty((self.max_queue_size, *input_tensor_shape), dtype=dtype).share_memory_()
-        self.workers = []
         self.to_upload = multiprocessing.Queue(maxsize=max_queue_size)
         self.available = multiprocessing.Queue()
 
@@ -189,13 +187,17 @@ class MultiLayerS3WCache():
         alive_workers = [p for p in self.workers if p.is_alive()]
         num_alive = len(alive_workers)
 
-        print('sending stop signals to workers...')
+        print('Sending stop signals to workers...')
         for _ in range(num_alive):
             self.to_upload.put('STOP', block=True)
 
-        print('waiting for workers to recieve stop signals and exit...')
+        print('Waiting for workers to receive stop signals and exit...')
         for p in self.workers:  
-            p.join()
+            p.join(timeout=10)
+            if p.is_alive():
+                print(f"Force terminating worker {p.name} (PID: {p.pid})")
+                p.terminate()
+                p.join()
 
         self.uploading = False
 
@@ -209,7 +211,6 @@ class MultiLayerS3WCache():
 
             if self.metadata[location] is None:
                 self.metadata[location] = _get_metadata(activations, 1)
-
                 self._save_metadata(location)
             else:
                 if activations.shape[0] != self.metadata[location]['batch_size']:
@@ -225,7 +226,6 @@ class MultiLayerS3WCache():
             self._buffer[next_idx] = activations
             self.to_upload.put((next_idx, location), block=True)
 
-    
     def _save_metadata(self, location):
         self.s3_client.put_object(
             Body=json.dumps(self.metadata[location]), 
@@ -240,7 +240,19 @@ class MultiLayerS3WCache():
             if self.metadata[location] is None:
                 raise ValueError(f'Cannot finalize cache without any data for location {location}')
             self._save_metadata(location)
-        
+
+    def __enter__(self):
+        # Optional: Return self or another resource
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Automatically called at the end of the with block
+        self.finalize()
+        if exc_type:
+            print(f"Exception of type {exc_type} occurred with message: {exc_value}")
+        # Returning False re-raises the exception, if any
+        return False
+    
 
 class S3WCache():
     @classmethod

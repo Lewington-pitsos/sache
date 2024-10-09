@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from sache.log import ProcessLogger
+from sache.log import SacheLogger
 from sache.model import SAE, SwitchSAE, TopKSwitchSAE, TopKSAE
 
 def get_histogram(tensor, bins=50):
@@ -15,7 +15,7 @@ def get_histogram(tensor, bins=50):
 
     return hist_list, bin_edges_list
 
-class TrainLogger(ProcessLogger):
+class TrainLogger(SacheLogger):
     def __init__(self, run_name, log_mean_std=False, max_sample=1024, *args, **kwargs):
         super(TrainLogger, self).__init__(run_name, *args, **kwargs)
         self.log_mean_std = log_mean_std

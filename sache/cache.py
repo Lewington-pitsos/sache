@@ -159,7 +159,6 @@ class MultiLayerS3WCache:
         self.workers = []
 
         self.uploading = False
-        self.start()
 
     def start(self):
         for i in range(self.num_workers):
@@ -242,6 +241,7 @@ class MultiLayerS3WCache:
             self._save_metadata(location)
 
     def __enter__(self):
+        self.start()
         # Optional: Return self or another resource
         return self
 

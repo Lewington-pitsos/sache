@@ -186,19 +186,18 @@ def vit_generate(
         
         transformer.eval()
 
-        with torch.no_grad():
-            for i, batch in enumerate(dataloader):
-                
-                if full_sequence:
-                    cache_dict = transformer.all_activations(batch)
-                else:
-                    cache_dict = transformer.cls_activations(batch)
+        with cache as c:
+            with torch.no_grad():
+                for i, batch in enumerate(dataloader):
+                    
+                    if full_sequence:
+                        cache_dict = transformer.all_activations(batch)
+                    else:
+                        cache_dict = transformer.cls_activations(batch)
 
-                cache.append(cache_dict)
+                    c.append(cache_dict)
 
-                if n_samples is not None and i * batch_size >= n_samples:
-                    break
+                    if n_samples is not None and i * batch_size >= n_samples:
+                        break
 
-                lg.log_batch(cache_dict[hook_locations[-1]].to('cpu')) # only logs the last activations
-
-            cache.finalize()
+                    lg.log_batch(cache_dict[hook_locations[-1]].to('cpu')) # only logs the last activations

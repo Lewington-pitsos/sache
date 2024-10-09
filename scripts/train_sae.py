@@ -247,8 +247,7 @@ def train(
                 if token_count >= n_tokens:
                     overall_end = time.time()
                     print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
-                    return
-
+                    break
 
             files_worth = token_count // tokens_per_file
             if files_worth > current_files_worth:
@@ -274,9 +273,14 @@ def train(
             if next_save is not None and token_count >= next_save:
                 save_sae(sae, token_count, data_name, lg.log_id)
                 next_save += save_every
+
+            if token_count >= n_tokens:
+                break
         
         if save_every is not None:
             save_sae(sae, token_count, data_name, lg.log_id)
+
+        cache.finalize()
 
 if __name__ == "__main__":
     fire.Fire(train)

@@ -323,6 +323,7 @@ def train_sae(
             scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: min(1, epoch / lr_warmup_steps))
 
         cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size)
+        print('total number of files to download', len(cache))
 
         total_size = cache.metadata['bytes_per_file']
         tokens_per_file = cache.samples_per_file * seq_len
@@ -338,144 +339,146 @@ def train_sae(
         current_files_worth = 0
         token_count = 0
         next_save = save_every
-        for acts in cache:
-            acts = acts.to(device)  # (n_samples, seq_len, d_in)
-            acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
+        with cache as running_cache:
+            for acts in running_cache:
+                acts = acts.to(device)  # (n_samples, seq_len, d_in)
+                acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
 
-            acts, positions = flatten_activations(acts, seq_len, skip_first_n, d_in, device)
-
-            if secondary_input is not None:
-                token_ids = acts[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
-            else:
-                token_ids = None
-
-            for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
-                token_count += batch_size
-                batch = acts[idx:idx+batch_size]
-                batch_positions = positions[idx:idx+batch_size]
-
-                optimizer.zero_grad()
-                if batch_norm:
-                    with torch.no_grad():
-                        batch_mean = batch.mean(dim=0, keepdim=True)
-                        batch_std = batch.std(dim=0, keepdim=True)
-                        batch = (batch - batch_mean) / (batch_std + 1e-6)
+                acts, positions = flatten_activations(acts, seq_len, skip_first_n, d_in, device)
 
                 if secondary_input is not None:
-                    output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+                    token_ids = acts[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
                 else:
-                    output = sae.forward_descriptive(batch)
-                    
-                reconstruction = output['reconstruction']
+                    token_ids = None
 
-                if output['active_latents'] is not None:
-                    with torch.no_grad():
-                        dead_latents[output['active_latents']] = 0
-                        dead_latents += batch_size
-                        dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
-                else:
-                    dead_latent_pct = None
+                for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
+                    token_count += batch_size
+                    batch = acts[idx:idx+batch_size]
+                    batch_positions = positions[idx:idx+batch_size]
 
-                delta = batch - reconstruction
-                delta_pow = delta.pow(2)
-                
-                with torch.no_grad():
-                    sample_mse = delta_pow.mean(dim=1)
-                    if skip_first_n > 0:
-                        mse_sum = torch.bincount(batch_positions, weights=sample_mse)
-                        position_counts = torch.bincount(batch_positions)
-                        position_mse = mse_sum / torch.clamp(position_counts, min=1)
-                    elif seq_len == 1:
-                        position_mse = sample_mse.mean().unsqueeze(0)
+                    optimizer.zero_grad()
+                    if batch_norm:
+                        with torch.no_grad():
+                            batch_mean = batch.mean(dim=0, keepdim=True)
+                            batch_std = batch.std(dim=0, keepdim=True)
+                            batch = (batch - batch_mean) / (batch_std + 1e-6)
+
+                    if secondary_input is not None:
+                        output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
                     else:
-                        position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
+                        output = sae.forward_descriptive(batch)
+                        
+                    reconstruction = output['reconstruction']
 
-                    activationwise_variance = batch.pow(2).sum(-1)
-                    activationwise_delta = delta_pow.sum(-1)
-                    explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
+                    if output['active_latents'] is not None:
+                        with torch.no_grad():
+                            dead_latents[output['active_latents']] = 0
+                            dead_latents += batch_size
+                            dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
+                    else:
+                        dead_latent_pct = None
+
+                    delta = batch - reconstruction
+                    delta_pow = delta.pow(2)
+                    
+                    with torch.no_grad():
+                        sample_mse = delta_pow.mean(dim=1)
+                        if skip_first_n > 0:
+                            mse_sum = torch.bincount(batch_positions, weights=sample_mse)
+                            position_counts = torch.bincount(batch_positions)
+                            position_mse = mse_sum / torch.clamp(position_counts, min=1)
+                        elif seq_len == 1:
+                            position_mse = sample_mse.mean().unsqueeze(0)
+                        else:
+                            position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
+
+                        activationwise_variance = batch.pow(2).sum(-1)
+                        activationwise_delta = delta_pow.sum(-1)
+                        explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
 
 
-                mse = delta_pow.mean()
-                variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
-                sum_mse = delta_pow.sum(dim=-1).mean()   
+                    mse = delta_pow.mean()
+                    variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
+                    sum_mse = delta_pow.sum(dim=-1).mean()   
 
 
-                if output['expert_weighting'] is not None:
-                    expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
-                    loss = variance_prop_mse + (expert_privilege * privilege_weighting)
-                else:
-                    expert_privilege = None
+                    if output['expert_weighting'] is not None:
+                        expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
+                        loss = variance_prop_mse + (expert_privilege * privilege_weighting)
+                    else:
+                        expert_privilege = None
 
-                if architecture == 'relu':
-                    l1 = output['latent'].abs().sum(dim=1).mean()
-                    loss = variance_prop_mse + l1_coefficient * l1
-                else:
-                    loss = variance_prop_mse
-                    l1 = None
+                    if architecture == 'relu':
+                        l1 = output['latent'].abs().sum(dim=1).mean()
+                        loss = variance_prop_mse + l1_coefficient * l1
+                    else:
+                        loss = variance_prop_mse
+                        l1 = None
 
-                latent = output['latent']
-                experts_chosen = output['experts_chosen']
+                    latent = output['latent']
+                    experts_chosen = output['experts_chosen']
 
-                loss.backward()
-                optimizer.step()
-                if lr_warmup_steps is not None:
-                    scheduler.step()
+                    loss.backward()
+                    optimizer.step()
+                    if lr_warmup_steps is not None:
+                        scheduler.step()
 
-                lg.log_loss(
-                    mse=mse, 
-                    sum_mse=sum_mse,
-                    l1=l1, 
-                    loss=loss, 
-                    batch=batch, 
-                    latent=latent, 
-                    dead_pct=dead_latent_pct, 
-                    expert_privilege=expert_privilege,
-                    lr=optimizer.param_groups[0]['lr'],
-                    position_mse=position_mse,
-                    explained_variance=explained_variance,
-                    variance_prop_mse=variance_prop_mse,
-                )
+                    lg.log_loss(
+                        mse=mse, 
+                        sum_mse=sum_mse,
+                        l1=l1, 
+                        loss=loss, 
+                        batch=batch, 
+                        latent=latent, 
+                        dead_pct=dead_latent_pct, 
+                        expert_privilege=expert_privilege,
+                        lr=optimizer.param_groups[0]['lr'],
+                        position_mse=position_mse,
+                        explained_variance=explained_variance,
+                        variance_prop_mse=variance_prop_mse,
+                    )
+
+                    if token_count >= n_tokens:
+                        overall_end = time.time()
+                        print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
+                        break
+
+                files_worth = token_count // tokens_per_file
+                if files_worth > current_files_worth:
+                    current_files_worth = files_worth
+                    lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
+                    end = time.time()
+                    if start is not None:
+                        elapsed = end - start
+                        overall_elapsed = end - overall_start
+                        print(f"Time taken for {files_worth} files worth of activations: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
+                        lg.log({
+                            'event': 'file_processed',
+                            'time_to_process_file': elapsed, 
+                            'mb_downloaded': total_size / MB, 
+                            'mbps': total_size / MB / elapsed,
+                            'tokens_per_second': tokens_per_file / elapsed,
+                            'total_time_elapsed': overall_elapsed,
+                            'file': files_worth,
+                        })
+
+                    start = time.time()
+
+                if next_save is not None and token_count >= next_save:
+                    save_sae(
+                        sae, 
+                        token_count, 
+                        data_name, 
+                        lg.log_id, 
+                        s3_client=s3_client if save_checkpoints_to_s3 else None, 
+                        bucket_name=log_bucket
+                    )
+                    next_save += save_every
 
                 if token_count >= n_tokens:
-                    overall_end = time.time()
-                    print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
                     break
 
-            files_worth = token_count // tokens_per_file
-            if files_worth > current_files_worth:
-                current_files_worth = files_worth
-                lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
-                end = time.time()
-                if start is not None:
-                    elapsed = end - start
-                    overall_elapsed = end - overall_start
-                    print(f"Time taken for {files_worth} files worth of activations: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
-                    lg.log({
-                        'event': 'file_processed',
-                        'time_to_process_file': elapsed, 
-                        'mb_downloaded': total_size / MB, 
-                        'mbps': total_size / MB / elapsed,
-                        'tokens_per_second': tokens_per_file / elapsed,
-                        'total_time_elapsed': overall_elapsed,
-                        'file': files_worth,
-                    })
-
-                start = time.time()
-
-            if next_save is not None and token_count >= next_save:
-                save_sae(
-                    sae, 
-                    token_count, 
-                    data_name, 
-                    lg.log_id, 
-                    s3_client=s3_client if save_checkpoints_to_s3 else None, 
-                    bucket_name=log_bucket
-                )
-                next_save += save_every
-
-            if token_count >= n_tokens:
-                break
-        
+        # out of the cache download loop
         if save_every is not None:
             save_sae(
                 sae, 
@@ -486,4 +489,3 @@ def train_sae(
                 bucket_name=log_bucket
             )
 
-        cache.finalize()

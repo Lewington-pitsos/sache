@@ -1,3 +1,4 @@
+from pdb import run
 import shutil
 import os
 from io import BytesIO
@@ -166,6 +167,12 @@ class MockCache():
 
     def __next__(self):
         return next(self.data)
+    
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
     def finalize(self):
         pass
@@ -185,11 +192,11 @@ def test_shuffling_read_cache():
     mc = MockCache(data)
 
     sc = ShufflingRCache(mc, batch_size * seq_len * 6, batch_size * seq_len, d_in, dtype=torch.float32)
-
-    for i, batch in enumerate(sc):
-        assert batch.shape == (batch_size * seq_len, d_in)
-        assert batch.isnan().sum().item() == 0
-        assert batch.std().item() > 1.0
+    with sc as running_cache:
+        for i, batch in enumerate(running_cache):
+            assert batch.shape == (batch_size * seq_len, d_in)
+            assert batch.isnan().sum().item() == 0
+            assert batch.std().item() > 1.0
 
     assert i == 14
 
@@ -206,10 +213,11 @@ def test_shuffling_read_cache_uneven_batch_size():
 
     sc = ShufflingRCache(mc, seq_len * 29, batch_size * seq_len, d_in, dtype=torch.float32)
 
-    for i, batch in enumerate(sc):
-        assert batch.shape == (batch_size * seq_len, d_in)
-        assert batch.isnan().sum().item() == 0
-        assert batch.std().item() > 1.0
+    with sc as running_cache:
+        for i, batch in enumerate(running_cache):
+            assert batch.shape == (batch_size * seq_len, d_in)
+            assert batch.isnan().sum().item() == 0
+            assert batch.std().item() > 1.0
 
     assert i == 14
 
@@ -226,11 +234,11 @@ def test_small_bs_shuffling_read_cache():
     mc = MockCache(data)
 
     sc = ShufflingRCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
-
-    for i, batch in enumerate(sc):
-        assert batch.shape == (out_bs * seq_len, d_in)
-        assert batch.isnan().sum().item() == 0
-        assert batch.std().item() > 1.0
+    with sc as running_cache:
+        for i, batch in enumerate(running_cache):
+            assert batch.shape == (out_bs * seq_len, d_in)
+            assert batch.isnan().sum().item() == 0
+            assert batch.std().item() > 1.0
 
     assert i == 29
 
@@ -246,11 +254,11 @@ def test_big_cache_bs_shuffling_read_cache():
     mc = MockCache(data)
 
     sc = ShufflingRCache(mc, batch_size * seq_len * 12, out_bs * seq_len, d_in, dtype=torch.float32)
-
-    for i, batch in enumerate(sc):
-        assert batch.shape == (out_bs * seq_len, d_in)
-        assert batch.isnan().sum().item() == 0
-        assert batch.std().item() > 1.0
+    with sc as running_cache:
+        for i, batch in enumerate(running_cache):
+            assert batch.shape == (out_bs * seq_len, d_in)
+            assert batch.isnan().sum().item() == 0
+            assert batch.std().item() > 1.0
 
     assert i == 14
 
@@ -452,65 +460,53 @@ def test_multi_layer_s3wcache_cleanup_on_exception():
             assert not worker.is_alive(), f"Worker {worker.name} should have been terminated."
 
 
-# def test_s3_read_cache_with_many_files():
-#     with mock_aws():
-#         # Create a mocked S3 client
-#         s3_client = boto3.client('s3', region_name='us-east-1')
+def test_s3_read_cache_with_many_files():
+    with mock_aws():
+        # Create a mocked S3 client
+        s3_client = boto3.client('s3', region_name='us-east-1')
 
-#         # Create a mocked bucket
-#         bucket_name = 'test-bucket'
-#         s3_client.create_bucket(Bucket=bucket_name)
+        # Create a mocked bucket
+        s3_client.create_bucket(Bucket=TEST_BUCKET_NAME)
 
-#         # Define the prefix and the number of files (more than 1000)
-#         prefix = 'test_prefix'
-#         num_files = 1050  # More than the usual S3 cap of 1000 files per list_objects_v2 call
+        # Define the prefix and the number of files (more than 1000)
+        prefix = 'test_prefix'
+        num_files = 1050  # More than the usual S3 cap of 1000 files per list_objects_v2 call
 
-#         batch_size = 1
-#         sequence_length = 1
-#         d_in = 1
-#         tensor_shape = (batch_size, sequence_length, d_in)
-#         bytes_per_file = batch_size * sequence_length * d_in * 4  # float32
+        batch_size = 1
+        sequence_length = 1
+        d_in = 1
+        tensor_shape = (batch_size, sequence_length, d_in)
+        bytes_per_file = batch_size * sequence_length * d_in * 4  # float32
 
-#         # Upload metadata.json
-#         metadata = {
-#             'batch_size': batch_size,
-#             'sequence_length': sequence_length,
-#             'd_in': d_in,
-#             'batches_per_file': 1,
-#             'dtype': 'torch.float32',
-#             'shape': list(tensor_shape),
-#             'bytes_per_file': bytes_per_file
-#         }
-#         s3_client.put_object(Bucket=bucket_name, Key=f'{prefix}/metadata.json', Body=json.dumps(metadata))
+        # Upload metadata.json
+        metadata = {
+            'batch_size': batch_size,
+            'sequence_length': sequence_length,
+            'd_in': d_in,
+            'batches_per_file': 1,
+            'dtype': 'torch.float32',
+            'shape': list(tensor_shape),
+            'bytes_per_file': bytes_per_file
+        }
+        s3_client.put_object(Bucket=TEST_BUCKET_NAME, Key=f'{prefix}/metadata.json', Body=json.dumps(metadata))
 
-#         # Upload more than 1000 small files to the mocked S3 bucket
-#         for i in range(num_files):
-#             key = f'{prefix}/file_{i}.saved.pt'
-#             tensor = torch.tensor([[[i]]], dtype=torch.float32)
-#             tensor_bytes = tensor.numpy().tobytes()
-#             s3_client.put_object(
-#                 Bucket=bucket_name,
-#                 Key=key,
-#                 Body=tensor_bytes,
-#                 ContentLength=len(tensor_bytes),
-#                 ContentType='application/octet-stream'
-#             )
+        # Upload more than 1000 small files to the mocked S3 bucket
+        for i in range(num_files):
+            key = f'{prefix}/file_{i}.saved.pt'
+            tensor = torch.tensor([[[i]]], dtype=torch.float32)
+            tensor_bytes = tensor.numpy().tobytes()
+            s3_client.put_object(
+                Bucket=TEST_BUCKET_NAME,
+                Key=key,
+                Body=tensor_bytes,
+                ContentLength=len(tensor_bytes),
+                ContentType='application/octet-stream'
+            )
 
-#         # Initialize the S3RCache with the mocked S3 client
-#         cache = S3RCache(s3_client, prefix, bucket_name)
+        # Initialize the S3RCache with the mocked S3 client
+        cache = S3RCache(s3_client, prefix, TEST_BUCKET_NAME)
 
-#         # Sync the cache to retrieve all file keys
-#         cache.sync()
+        # Sync the cache to retrieve all file keys
+        cache.sync()
 
-#         # Iterate over the cache and collect the values
-#         count = 0
-#         values = []
-#         for batch in cache:
-#             count += 1
-#             values.append(batch.item())
-
-#         # Assert that all files were loaded
-#         assert count == num_files, f"Expected {num_files} files, but got {count}."
-
-#         # Optional: Verify that all expected values are present
-#         assert set(values) == set(range(num_files)), "Mismatch in the loaded tensor values."
+        assert len(cache) == num_files

@@ -248,7 +248,7 @@ class MultiLayerS3WCache:
         # Automatically called at the end of the with block
         self.finalize()
         if exc_type:
-            print(f"Exception of type {exc_type} occurred with message: {exc_value}")
+            raise exc_value
         # Returning False re-raises the exception, if any
         return False
     
@@ -506,15 +506,26 @@ class S3RCache:
         for i in range(self.buffer_size):
             self.writeable_tensors.put(i)
 
+    def __len__(self):
+        return len(self._s3_paths)
+
     def _list_s3_files(self):
         if self.paths is not None:
             return self.paths
 
-        response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
+        # Use the paginator to handle potential multiple pages of results
+        paginator = self.s3_client.get_paginator('list_objects_v2')
         _metadata = metadata_path(self.s3_prefix)
-        paths = [f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" 
-                 for obj in response.get('Contents', []) if obj['Key'] != _metadata]
+        paths = []
 
+        # Iterate over each page of the list_objects_v2 response
+        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=self.s3_prefix):
+            paths.extend(
+                f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" 
+                for obj in page.get('Contents', []) if obj['Key'] != _metadata
+            )
+
+        # Sort the paths for consistency
         return sorted(paths)
 
     def __iter__(self):
@@ -555,7 +566,6 @@ class S3RCache:
             return t
         except Exception as e:
             print('Exception while iterating:', e)
-            self._stop_downloading()
             raise StopIteration
     
     def __next__(self):
@@ -566,13 +576,26 @@ class S3RCache:
             self._stop_downloading()
         raise StopIteration
 
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.finalize()
+        if exc_type:
+            raise exc_value
+        return False
+
     def finalize(self):
         """Clean up all running processes and resources."""
         self._stop_downloading()
 
     def _stop_downloading(self):
         print('Stopping workers...')
-        self._file_index.value = len(self._s3_paths)
+
+        if self._stop.value:
+            return
+
+        self._file_index.value = len(self)
         self._stop.value = True
 
         while not all([not p.is_alive() for p in self._running_processes]):
@@ -607,6 +630,18 @@ class ShufflingRCache():
     def __iter__(self):
         self.cache.__iter__()
         return self
+    
+    def __enter__(self):
+        self.cache.__enter__()
+    
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.cache.__exit__(exc_type, exc_value, traceback)
+        if exc_type:
+            raise exc_value
+        return False
+
 
     def finalize(self):
         self.cache.finalize()

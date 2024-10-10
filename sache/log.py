@@ -37,7 +37,6 @@ class SacheLogger():
 
         self.use_wandb = use_wandb
 
-        print('Logging to-----', self.log_dir)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir, exist_ok=True)
 

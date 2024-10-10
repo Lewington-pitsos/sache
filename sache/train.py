@@ -187,11 +187,11 @@ class TrainLogger(SacheLogger):
 
         self.log_sae(sae, info=info)
 
-def save_sae(sae, n_iter, data_name, name, local_base_dir='cruft', s3_client=None, bucket_name=None):
-    if not os.path.exists(local_base_dir):
-        os.makedirs(local_base_dir)
+def save_sae(sae, n_iter, data_name, name, base_dir='log', s3_client=None, bucket_name=None):
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
     
-    model_dir = os.path.join(local_base_dir, data_name + '-' + name)
+    model_dir = os.path.join(base_dir, data_name, name)
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
@@ -203,7 +203,7 @@ def save_sae(sae, n_iter, data_name, name, local_base_dir='cruft', s3_client=Non
         
         if bucket_name is None:
             raise ValueError('bucket_name must be provided if s3_client is provided')
-        s3_path = f'{data_name}/{name}/{n_iter}.pt'
+        s3_path = f'{base_dir}/{data_name}/{name}/{n_iter}.pt'
 
         print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
         s3_client.upload_file(model_filename, bucket_name, s3_path)

@@ -43,7 +43,7 @@ for layer in ['22_resid']:
             clone['name'] = 'test-' + layer
             clone['n_tokens'] = 600_000
             clone['shuffle'] = shuffle
-            clone['save_every'] = None
+            clone['save_every'] = 1_000_000
             clone['n_tokens'] = 3_000_000
             clone['n_experts'] = n_experts
             all_configs.append(clone)

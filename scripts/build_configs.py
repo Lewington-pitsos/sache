@@ -15,7 +15,9 @@ baseline =        {
     "n_cache_workers": 4,
     "batch_norm": False,
     'architecture': 'topk',
-    "save_every": 500_000_000
+    "save_every": 500_000_000,
+    "save_checkpoints_to_s3": True,
+
 }
 
 all_configs = []

@@ -1,4 +1,3 @@
-import json
 import os
 import time
 
@@ -188,18 +187,26 @@ class TrainLogger(SacheLogger):
 
         self.log_sae(sae, info=info)
 
-
-
-def save_sae(sae, n_iter, data_name, name, base_dir='cruft'):
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
+def save_sae(sae, n_iter, data_name, name, local_base_dir='cruft', s3_client=None, bucket_name=None):
+    if not os.path.exists(local_base_dir):
+        os.makedirs(local_base_dir)
     
-    model_dir = os.path.join(base_dir, data_name + '-' + name)
+    model_dir = os.path.join(local_base_dir, data_name + '-' + name)
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    torch.save(sae, os.path.join(model_dir, f'{n_iter}.pt'))
+    model_filename = os.path.join(model_dir, f'{n_iter}.pt')
+    torch.save(sae, model_filename)
+
+    if s3_client is not None:
+        
+        if bucket_name is None:
+            raise ValueError('bucket_name must be provided if s3_client is provided')
+        s3_path = f'{data_name}/{name}/{n_iter}.pt'
+
+        print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
+        s3_client.upload_file(model_filename, bucket_name, s3_path)
 
 def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
@@ -239,6 +246,7 @@ def train_sae(
         lr_warmup_steps=None,
         geom_median_file=None,
         save_every=2_500_000,
+        save_checkpoints_to_s3=False,
     ):
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
@@ -455,13 +463,27 @@ def train_sae(
                 start = time.time()
 
             if next_save is not None and token_count >= next_save:
-                save_sae(sae, token_count, data_name, lg.log_id)
+                save_sae(
+                    sae, 
+                    token_count, 
+                    data_name, 
+                    lg.log_id, 
+                    s3_client=s3_client if save_checkpoints_to_s3 else None, 
+                    bucket_name=log_bucket
+                )
                 next_save += save_every
 
             if token_count >= n_tokens:
                 break
         
         if save_every is not None:
-            save_sae(sae, token_count, data_name, lg.log_id)
+            save_sae(
+                sae, 
+                token_count, 
+                data_name, 
+                lg.log_id, 
+                s3_client=s3_client if save_checkpoints_to_s3 else None, 
+                bucket_name=log_bucket
+            )
 
         cache.finalize()

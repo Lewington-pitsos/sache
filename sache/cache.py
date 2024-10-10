@@ -433,8 +433,7 @@ async def _async_download(
             else:
                 print('Failed to download url', url)
 
-
-class S3RCache():
+class S3RCache:
     def __init__(self, 
                  s3_client, 
                  s3_prefix, 
@@ -482,12 +481,30 @@ class S3RCache():
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
 
+<<<<<<< Updated upstream
+=======
+        self._entered = False  # Flag to check context
+
+        signal.signal(signal.SIGTERM, self._catch_stop)
+        signal.signal(signal.SIGINT, self._catch_stop)
+
+    def __enter__(self):
+        """Enter the runtime context related to this object."""
+        self._entered = True
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the runtime context and clean up resources."""
+        self.finalize()
+        self._entered = False
+
+>>>>>>> Stashed changes
     @property
     def samples_per_file(self):
         return self.metadata['batches_per_file'] * self.metadata['batch_size']
 
     def _catch_stop(self, *args, **kwargs):
-        print('cleaning up before process is killed')
+        print('Cleaning up before process is killed')
         self._stop_downloading()
         sys.exit(0)
 
@@ -513,11 +530,15 @@ class S3RCache():
 
         response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=self.s3_prefix)
         _metadata = metadata_path(self.s3_prefix)
-        paths = [f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" for obj in response['Contents'] if obj['Key'] != _metadata]
+        paths = [f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" 
+                 for obj in response.get('Contents', []) if obj['Key'] != _metadata]
 
         return sorted(paths)
 
     def __iter__(self):
+        if not self._entered:
+            raise RuntimeError("S3RCache must be used within a 'with' context to iterate.")
+        
         self._reset()
 
         if self._running_processes:
@@ -554,7 +575,7 @@ class S3RCache():
 
             return t
         except Exception as e:
-            print('exception while iterating', e)
+            print('Exception while iterating:', e)
             self._stop_downloading()
             raise StopIteration
     
@@ -567,10 +588,11 @@ class S3RCache():
         raise StopIteration
 
     def finalize(self):
+        """Clean up all running processes and resources."""
         self._stop_downloading()
 
     def _stop_downloading(self):
-        print('stopping workers...')
+        print('Stopping workers...')
         self._file_index.value = len(self._s3_paths)
         self._stop.value = True
 
@@ -584,10 +606,11 @@ class S3RCache():
             time.sleep(0.25)
 
         for p in self._running_processes:
-            p.join() # still join to make sure all resources are cleaned up
+            p.join()  # Ensure all resources are cleaned up
 
         self._ongoing_downloads.value = 0
         self._running_processes = []
+
 
 class ShufflingRCache():
     def __init__(self, cache, buffer_size, batch_size, d_in, dtype):

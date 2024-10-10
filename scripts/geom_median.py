@@ -12,7 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-from sache.constants import MB, BUCKET_NAME
+from sache.constants import MB, TEST_BUCKET_NAME
 from sache.cache import S3RCache
 
 def geometric_median_array(points, weights, eps=1e-6, maxiter=100, ftol=1e-20):
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     
     data_name = 'ViT-3_000_000'
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
-    cache = S3RCache(s3_client, data_name, BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=8)
+    cache = S3RCache(s3_client, data_name, TEST_BUCKET_NAME, chunk_size=MB * 16, concurrency=200, n_workers=4, buffer_size=8)
 
     all_activations = None
 

@@ -11,9 +11,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sache.cache import S3RCache, ShufflingRCache, RBatchingCache
 from sache.train import TrainLogger
 from sache.model import SwitchSAE, TopKSwitchSAE, TopKSAE
-from sache.constants import MB, BUCKET_NAME
+from sache.constants import MB
 
 def main(
+        log_bucket,
+        data_bucket,
         run_name = 'merciless-citadel',
         n_steps = 289, # 647 is the total, 288 means just over 300,000,000 tokens
         k = 32,
@@ -29,8 +31,6 @@ def main(
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
         use_wandb=True,
-        log_bucket=BUCKET_NAME,
-        data_bucket=BUCKET_NAME,
         shuffle=True,
         wandb_project=None,
         base_expert=False,

@@ -2,13 +2,13 @@ import shutil
 import os
 from io import BytesIO
 import json
-from sache.constants import BUCKET_NAME
+from sache.constants import TEST_BUCKET_NAME
 from sache.cache import S3WCache, S3RCache, RBatchingCache, ShufflingRCache, MultiLayerS3WCache, metadata_path
 import torch
 import boto3
 import pytest
 import time
-from unittest import mock
+from moto import mock_aws
 
 
 def file_exists_on_aws(client, bucket_name, prefix):
@@ -25,15 +25,16 @@ def s3_client():
 
     yield prefix, client
 
-    response = client.list_objects_v2(Bucket=BUCKET_NAME, Prefix=prefix)
+
+    response = client.list_objects_v2(Bucket=TEST_BUCKET_NAME, Prefix=prefix)
     for obj in response.get('Contents', []):
-        client.delete_object(Bucket=BUCKET_NAME, Key=obj.get('Key'))
+        client.delete_object(Bucket=TEST_BUCKET_NAME, Key=obj.get('Key'))
     
-    exists_after_delete = file_exists_on_aws(client, BUCKET_NAME, prefix)
+    exists_after_delete = file_exists_on_aws(client, TEST_BUCKET_NAME, prefix)
     assert not exists_after_delete
 
 @pytest.fixture
-def test_cache_dir():
+def faux_cache_dir():
     local_dir = 'data/testing'
 
     if not os.path.exists(local_dir):
@@ -46,17 +47,16 @@ def test_cache_dir():
 def test_write_to_s3cache(s3_client):
     test_prefix, s3 = s3_client
 
-    exists_before = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
+    exists_before = file_exists_on_aws(s3, TEST_BUCKET_NAME, test_prefix)
     assert not exists_before
     
-    c = S3WCache(s3, test_prefix, bucket_name=BUCKET_NAME, save_every=1)
+    c = S3WCache(s3, test_prefix, bucket_name=TEST_BUCKET_NAME, save_every=1)
     activations = torch.rand(2, 16, 16) 
     id = c.append(activations)
 
     assert id is not None
 
-    exists_after = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
-    print(f"File exists after appending: {exists_after}")
+    exists_after = file_exists_on_aws(s3, TEST_BUCKET_NAME, test_prefix)
     assert exists_after
 
     loaded = c.load(id)
@@ -77,9 +77,8 @@ def test_batched_cache(s3_client):
         'bytes_per_file': 32 * 16 * 9 * 4
     }
 
-    s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
-
-    inner_cache = S3RCache(s3_client, s3_prefix, BUCKET_NAME)
+    s3_client.put_object(Bucket=TEST_BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
+    inner_cache = S3RCache(s3_client, s3_prefix, TEST_BUCKET_NAME)
     cache = RBatchingCache(inner_cache, 2)
     
     activations = torch.rand(32, 16, 9)
@@ -87,7 +86,7 @@ def test_batched_cache(s3_client):
     buffer = BytesIO()
     torch.save(activations, buffer)
     buffer.seek(0)
-    s3_client.upload_fileobj(buffer, BUCKET_NAME, s3_prefix + '/a.saved.pt')
+    s3_client.upload_fileobj(buffer, TEST_BUCKET_NAME, s3_prefix + '/a.saved.pt')
 
     cache.sync()
     count = 0
@@ -110,9 +109,9 @@ def test_s3_read_cache(s3_client):
         'bytes_per_file': 32 * 16 * 9 * 4
     }
 
-    s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
+    s3_client.put_object(Bucket=TEST_BUCKET_NAME, Key=s3_prefix + '/metadata.json', Body=json.dumps(metadata))
 
-    cache = S3RCache(s3_client, s3_prefix, BUCKET_NAME, concurrency=10)
+    cache = S3RCache(s3_client, s3_prefix, TEST_BUCKET_NAME, concurrency=10)
 
     count = 0
     for batch in cache:
@@ -125,7 +124,7 @@ def test_s3_read_cache(s3_client):
     tensor_bytes = activations.numpy().tobytes()
 
     s3_client.put_object(
-        Bucket=BUCKET_NAME, 
+        Bucket=TEST_BUCKET_NAME, 
         Key=s3_prefix + '/a.saved.pt', 
         Body=tensor_bytes, 
         ContentLength=len(tensor_bytes),
@@ -262,7 +261,7 @@ def test_multilayer_s3_wcache_activations(s3_client):
     with open('.credentials.json') as f:
         credentials = json.load(f)
 
-    exists_before = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
+    exists_before = file_exists_on_aws(s3, TEST_BUCKET_NAME, test_prefix)
     assert not exists_before
 
     hook_locations = [(3, 'module1'), (7, 'module2')]
@@ -272,8 +271,8 @@ def test_multilayer_s3_wcache_activations(s3_client):
         run_name=test_prefix,
         max_queue_size=10,
         input_tensor_shape=(2, 16, 16),
-        num_workers=2,
-        bucket_name=BUCKET_NAME,
+        num_workers=1,
+        bucket_name=TEST_BUCKET_NAME,
         dtype=torch.float32
     )
 
@@ -282,12 +281,14 @@ def test_multilayer_s3_wcache_activations(s3_client):
         (7, 'module2'): torch.rand(2, 16, 16)
     }
 
+    cache.start()
+
     cache.append(activation_dict)
 
     # Finalize to ensure uploads are complete
     cache.finalize()
 
-    exists_after = file_exists_on_aws(s3, BUCKET_NAME, test_prefix)
+    exists_after = file_exists_on_aws(s3, TEST_BUCKET_NAME, test_prefix)
     assert exists_after
 
     def get_location_name(run_name, location):
@@ -295,7 +296,7 @@ def test_multilayer_s3_wcache_activations(s3_client):
         return f'{run_name}/{layer}_{module}'
 
     # List the objects under the test_prefix
-    response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=test_prefix)
+    response = s3.list_objects_v2(Bucket=TEST_BUCKET_NAME, Prefix=test_prefix)
     s3_objects = response.get('Contents', [])
 
     # Collect files by location
@@ -315,7 +316,7 @@ def test_multilayer_s3_wcache_activations(s3_client):
 
         key = files[0]
         # Download the object
-        response = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+        response = s3.get_object(Bucket=TEST_BUCKET_NAME, Key=key)
         data = response['Body'].read()
         # Reconstruct the tensor
         dtype = activations.dtype
@@ -344,7 +345,7 @@ def test_multilayer_s3_wcache_metadata(s3_client):
         max_queue_size=10,
         input_tensor_shape=(2, 16, 16),
         num_workers=2,
-        bucket_name=BUCKET_NAME,
+        bucket_name=TEST_BUCKET_NAME,
         dtype=torch.float32
     )
 
@@ -390,12 +391,12 @@ def test_multilayer_s3_wcache_metadata(s3_client):
         metadata_key = metadata_path(loc_name)
 
         # Check if metadata.json exists on S3
-        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=metadata_key)
+        response = s3.list_objects_v2(Bucket=TEST_BUCKET_NAME, Prefix=metadata_key)
         assert 'Contents' in response, f"Metadata file {metadata_key} does not exist on S3."
         assert any(obj['Key'] == metadata_key for obj in response['Contents']), f"Metadata file {metadata_key} not found in S3 contents."
 
         # Download metadata.json from S3
-        response = s3.get_object(Bucket=BUCKET_NAME, Key=metadata_key)
+        response = s3.get_object(Bucket=TEST_BUCKET_NAME, Key=metadata_key)
         metadata_content = response['Body'].read().decode('utf-8')
         metadata = json.loads(metadata_content)
 
@@ -449,3 +450,67 @@ def test_multi_layer_s3wcache_cleanup_on_exception():
         for worker in cache.workers:
             worker.join(timeout=1)  # Wait briefly for process to terminate
             assert not worker.is_alive(), f"Worker {worker.name} should have been terminated."
+
+
+# def test_s3_read_cache_with_many_files():
+#     with mock_aws():
+#         # Create a mocked S3 client
+#         s3_client = boto3.client('s3', region_name='us-east-1')
+
+#         # Create a mocked bucket
+#         bucket_name = 'test-bucket'
+#         s3_client.create_bucket(Bucket=bucket_name)
+
+#         # Define the prefix and the number of files (more than 1000)
+#         prefix = 'test_prefix'
+#         num_files = 1050  # More than the usual S3 cap of 1000 files per list_objects_v2 call
+
+#         batch_size = 1
+#         sequence_length = 1
+#         d_in = 1
+#         tensor_shape = (batch_size, sequence_length, d_in)
+#         bytes_per_file = batch_size * sequence_length * d_in * 4  # float32
+
+#         # Upload metadata.json
+#         metadata = {
+#             'batch_size': batch_size,
+#             'sequence_length': sequence_length,
+#             'd_in': d_in,
+#             'batches_per_file': 1,
+#             'dtype': 'torch.float32',
+#             'shape': list(tensor_shape),
+#             'bytes_per_file': bytes_per_file
+#         }
+#         s3_client.put_object(Bucket=bucket_name, Key=f'{prefix}/metadata.json', Body=json.dumps(metadata))
+
+#         # Upload more than 1000 small files to the mocked S3 bucket
+#         for i in range(num_files):
+#             key = f'{prefix}/file_{i}.saved.pt'
+#             tensor = torch.tensor([[[i]]], dtype=torch.float32)
+#             tensor_bytes = tensor.numpy().tobytes()
+#             s3_client.put_object(
+#                 Bucket=bucket_name,
+#                 Key=key,
+#                 Body=tensor_bytes,
+#                 ContentLength=len(tensor_bytes),
+#                 ContentType='application/octet-stream'
+#             )
+
+#         # Initialize the S3RCache with the mocked S3 client
+#         cache = S3RCache(s3_client, prefix, bucket_name)
+
+#         # Sync the cache to retrieve all file keys
+#         cache.sync()
+
+#         # Iterate over the cache and collect the values
+#         count = 0
+#         values = []
+#         for batch in cache:
+#             count += 1
+#             values.append(batch.item())
+
+#         # Assert that all files were loaded
+#         assert count == num_files, f"Expected {num_files} files, but got {count}."
+
+#         # Optional: Verify that all expected values are present
+#         assert set(values) == set(range(num_files)), "Mismatch in the loaded tensor values."

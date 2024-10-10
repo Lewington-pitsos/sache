@@ -157,7 +157,7 @@ class MultiLayerS3WCache:
         self.hook_locations = hook_locations
         self.workers = []
 
-        self.uploading = False
+        self.uploading = True
 
     def start(self):
         for i in range(self.num_workers):
@@ -518,9 +518,6 @@ class S3RCache:
         return sorted(paths)
 
     def __iter__(self):
-        if not self._entered:
-            raise RuntimeError("S3RCache must be used within a 'with' context to iterate.")
-        
         self._reset()
 
         if self._running_processes:

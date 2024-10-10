@@ -8,7 +8,7 @@ import boto3
 from sache.log import SacheLogger
 from sache.model import SAE, LookupTopkSwitchSAE, SwitchSAE, TopKSwitchSAE, TopKSAE
 from sache.cache import S3RCache, ShufflingRCache
-from sache.constants import MB, BUCKET_NAME
+from sache.constants import MB
 
 def get_histogram(tensor, bins=50):
     tensor = tensor.detach()
@@ -219,6 +219,8 @@ def flatten_activations(t, seq_len, skip_first_n, d_in, device):
 def train_sae(
         data_name,
         credentials,
+        log_bucket,
+        data_bucket,
         n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
         k = 32,
         n_feats = 24576,
@@ -231,8 +233,6 @@ def train_sae(
         tokens_till_latent_dies = 10_000_000,
         device = 'cuda',
         use_wandb=True,
-        log_bucket=BUCKET_NAME,
-        data_bucket=BUCKET_NAME,
         shuffle=False,
         wandb_project=None,
         name=None, 

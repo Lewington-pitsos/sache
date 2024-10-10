@@ -153,6 +153,7 @@ jedi = "0.19.1"
 
 [tool.poetry.group.dev.dependencies]
 pipdeptree = "^2.23.4"
+moto = "^5.0.16"
 
 [build-system]
 requires = ["poetry-core"]

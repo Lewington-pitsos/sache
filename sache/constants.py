@@ -4,4 +4,4 @@ MB = KB * KB
 
 OUTER_CACHE_DIR = 'cache'
 INNER_CACHE_DIR = 'cache'
-BUCKET_NAME = 'lewington-pitsos-sache'
+TEST_BUCKET_NAME = 'sae-activations-test'

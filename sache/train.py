@@ -401,7 +401,6 @@ def train_sae(
                     variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
                     sum_mse = delta_pow.sum(dim=-1).mean()   
 
-
                     if output['expert_weighting'] is not None:
                         expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
                         loss = variance_prop_mse + (expert_privilege * privilege_weighting)

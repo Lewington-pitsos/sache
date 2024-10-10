@@ -481,24 +481,6 @@ class S3RCache:
         self._file_index = Value('i', 0)
         self._ongoing_downloads = Value('i', 0)
 
-<<<<<<< Updated upstream
-=======
-        self._entered = False  # Flag to check context
-
-        signal.signal(signal.SIGTERM, self._catch_stop)
-        signal.signal(signal.SIGINT, self._catch_stop)
-
-    def __enter__(self):
-        """Enter the runtime context related to this object."""
-        self._entered = True
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the runtime context and clean up resources."""
-        self.finalize()
-        self._entered = False
-
->>>>>>> Stashed changes
     @property
     def samples_per_file(self):
         return self.metadata['batches_per_file'] * self.metadata['batch_size']

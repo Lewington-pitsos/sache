@@ -413,9 +413,12 @@ def train_sae(
                         else:
                             position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
-                        activationwise_variance = batch.pow(2).sum(-1)
-                        activationwise_delta = delta_pow.sum(-1)
-                        explained_variance = (1 - activationwise_delta / activationwise_variance).mean()
+                        batch_mean = batch.mean(-1, keepdim=True)
+                        delta_mean = delta.mean(-1, keepdim=True)
+
+                        activation_variance = batch_mean.pow(2).sum(-1)
+                        delta_variance = delta_mean.pow(2).sum(-1)
+                        explained_variance = (1 - delta_variance / activation_variance).mean()
 
 
                     mse = delta_pow.mean()

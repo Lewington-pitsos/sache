@@ -353,7 +353,7 @@ def train_sae(
 
         token_count = start_from if start_from is not None else 0
         current_files_worth = token_count // tokens_per_file 
-        next_save = save_every
+        next_save = token_count + save_every
         with cache as running_cache:
             for acts in running_cache:
                 acts = acts.to(device)  # (n_samples, seq_len, d_in)

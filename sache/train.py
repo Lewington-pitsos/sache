@@ -277,7 +277,7 @@ def train_sae(
         log_id=name,
         credentials=credentials,
     )
-    # train_logger = NOOPLogger()
+    
     if geom_median_file is not None:
         geom_median = torch.load('cruft/geom_median.pt').to(device)
     else:

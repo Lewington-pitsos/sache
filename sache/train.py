@@ -1,11 +1,12 @@
 import os
 import time
 
+from sklearn import base
 import torch
 import numpy as np
 import boto3
 
-from sache.log import SacheLogger
+from sache.log import SacheLogger, LOG_DIR
 from sache.model import SAE, LookupTopkSwitchSAE, SwitchSAE, TopKSwitchSAE, TopKSAE
 from sache.cache import S3RCache, ShufflingRCache
 from sache.constants import MB
@@ -263,12 +264,14 @@ def train_sae(
         save_every=2_500_000,
         save_checkpoints_to_s3=False,
         load_checkpoint=None,
-        start_from=None
+        start_from=None,
+        base_log_dir=LOG_DIR
     ):
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
     train_logger = TrainLogger(
         data_name, 
+        base_dir=base_log_dir,
         log_mean_std=True, 
         s3_backup_bucket=log_bucket, 
         s3_client=s3_client, 

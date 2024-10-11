@@ -270,7 +270,7 @@ def train_sae(
     
     train_logger = TrainLogger(
         data_name, 
-        base_dir=base_log_dir,
+        base_log_dir=base_log_dir,
         log_mean_std=True, 
         s3_backup_bucket=log_bucket, 
         s3_client=s3_client, 

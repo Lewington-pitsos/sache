@@ -1,7 +1,6 @@
 import os
 import time
 
-from sklearn import base
 import torch
 import numpy as np
 import boto3

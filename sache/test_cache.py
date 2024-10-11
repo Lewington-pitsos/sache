@@ -97,6 +97,77 @@ def test_batched_cache(s3_client):
 
     assert count == 16
 
+def test_s3_read_cache_start_from(s3_client):
+    s3_prefix, s3_client = s3_client
+
+    # Define metadata for the test
+    metadata = {
+        'batch_size': 32,
+        'sequence_length': 16,
+        'd_in': 9,
+        'batches_per_file': 1,
+        'dtype': 'torch.float32',
+        'shape': [32, 16, 9],
+        'bytes_per_file': 32 * 16 * 9 * 4  # batch_size * sequence_length * d_in * sizeof(float32)
+    }
+
+    # Upload metadata to the S3 bucket
+    s3_client.put_object(
+        Bucket=TEST_BUCKET_NAME, 
+        Key=s3_prefix + '/metadata.json', 
+        Body=json.dumps(metadata)
+    )
+
+    # Number of files to upload
+    num_files = 3
+    activations_list = []
+
+    # Upload multiple activation files to the S3 bucket
+    for i in range(num_files):
+        activations = torch.rand(32, 16, 9)
+        activations_list.append(activations)
+        tensor_bytes = activations.numpy().tobytes()
+        s3_client.put_object(
+            Bucket=TEST_BUCKET_NAME,
+            Key=f"{s3_prefix}/file_{i}.saved.pt",
+            Body=tensor_bytes,
+            ContentLength=len(tensor_bytes),
+            ContentType='application/octet-stream'
+        )
+
+    # Calculate tokens per file based on metadata
+    tokens_per_file = metadata['batches_per_file'] * metadata['batch_size'] * metadata['sequence_length']
+
+    # Set 'start_from' to skip the first two files
+    start_from = tokens_per_file * 2  # Start from the 2nd file
+
+    # Initialize S3RCache with the 'start_from' parameter
+    cache = S3RCache(
+        s3_client, 
+        s3_prefix, 
+        TEST_BUCKET_NAME, 
+        start_from=start_from,
+        n_workers=1
+    )
+
+    with cache as running_cache:
+        collected_activations = []
+
+        # Iterate over the cache and collect activations
+        for batch in running_cache:
+            collected_activations.append(batch)
+
+        # Expected activations should start from the third file
+        expected_activations = activations_list[2:]
+
+        # Assert that the correct number of batches are collected
+        assert len(collected_activations) == len(expected_activations), \
+            f"Expected {len(expected_activations)} batches, got {len(collected_activations)}"
+
+        # Compare each collected activation with the expected activation
+        for collected, expected in zip(collected_activations, expected_activations):
+            assert torch.equal(collected, expected), "Collected activation does not match expected activation"
+
 def test_s3_read_cache(s3_client):
     s3_prefix, s3_client = s3_client
 

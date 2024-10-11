@@ -247,6 +247,8 @@ def train_sae(
         geom_median_file=None,
         save_every=2_500_000,
         save_checkpoints_to_s3=False,
+        load_checkpoint=None,
+        start_from=None
     ):
     s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
     
@@ -322,7 +324,7 @@ def train_sae(
         if lr_warmup_steps is not None:
             scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: min(1, epoch / lr_warmup_steps))
 
-        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size)
+        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_from=start_from)
         print('total number of files to download', len(cache))
 
         total_size = cache.metadata['bytes_per_file']

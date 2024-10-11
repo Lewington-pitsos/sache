@@ -1,3 +1,4 @@
+import math
 import sys
 import warnings
 import json
@@ -443,7 +444,8 @@ class S3RCache:
                  chunk_size=MB*16, 
                  buffer_size=2,
                  paths=None,
-                 n_workers=1
+                 n_workers=1,
+                 start_from=None
             ) -> None:
 
         if mp.get_start_method(allow_none=True) != 'spawn':
@@ -461,15 +463,24 @@ class S3RCache:
         self.buffer_size = buffer_size
         
         self.paths = paths
-        self._s3_paths = self._list_s3_files()
+        
 
         response = self.s3_client.get_object(Bucket=bucket_name, Key=metadata_path(s3_prefix))
         content = response['Body'].read()
         self.metadata = json.loads(content)
         self._activation_dtype = eval(self.metadata['dtype'])
 
+        tokens_per_file = self.samples_per_file * self.metadata['sequence_length']
+
+        if start_from is not None:
+            self.start_from = math.ceil(start_from / tokens_per_file)
+        else:
+            self.start_from = 0
+
         self._running_processes = []
         self.n_workers = n_workers
+
+        self._s3_paths = self._list_s3_files()
 
         self.readable_tensors = Queue(maxsize=self.buffer_size)
         self.writeable_tensors = Queue(maxsize=self.buffer_size)
@@ -526,7 +537,7 @@ class S3RCache:
             )
 
         # Sort the paths for consistency
-        return sorted(paths)
+        return sorted(paths[self.start_from:])
 
     def __iter__(self):
         self._reset()

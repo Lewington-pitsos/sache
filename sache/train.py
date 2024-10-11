@@ -216,6 +216,21 @@ def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     t = t[:, :, :d_in].flatten(0, 1)
     return t, positions
 
+def load_sae_from_checkpoint(checkpoint, s3_client, local_dir='cruft'):
+    if checkpoint.startswith('s3://'):
+        if not os.path.exists(local_dir):
+            os.makedirs(local_dir)
+
+        local_path = f'{local_dir}/{os.path.basename(checkpoint)}'
+        s3_client.download_file(
+            Bucket=checkpoint.split('/')[2], 
+            Key='/'.join(checkpoint.split('/')[3:]), 
+            Filename=local_path
+        )
+        return torch.load(local_path)
+    else:
+        return torch.load(checkpoint)
+
 def train_sae(
         data_name,
         credentials,
@@ -268,7 +283,9 @@ def train_sae(
     else:
         geom_median = None
 
-    if n_experts is not None:
+    if load_checkpoint is not None:
+        sae = load_sae_from_checkpoint(load_checkpoint, s3_client)
+    elif n_experts is not None:
         if secondary_input is not None:
             dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = dict[secondary_input]

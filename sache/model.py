@@ -116,15 +116,12 @@ class LookupTopkSwitchSAE(TopKSwitchSAE):
         return output
 
 class SAE(torch.nn.Module):
-    def __init__(self, n_features, d_in, device, geom_median=None):
+    def __init__(self, n_features, d_in, device):
         super(SAE, self).__init__()
 
         self.pre_b = torch.nn.Parameter(torch.randn(d_in, device=device) * 0.01)
         self.enc = torch.nn.Parameter(torch.randn(d_in, n_features, device=device) / (2**0.5) / (d_in ** 0.5))
         self.dec = torch.nn.Parameter(self.enc.mT.clone())
-
-        if geom_median is not None:
-            self.pre_b.data = geom_median.to(self.pre_b.dtype).to(device)
 
         self.activation = torch.nn.ReLU()
 

@@ -1,5 +1,6 @@
 import os
 import time
+import token
 
 import torch
 import numpy as np
@@ -212,7 +213,7 @@ def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
         return t, torch.zeros(t.shape[0], dtype=torch.int64, device=device)
 
-    positions = torch.linspace(0, seq_len - skip_first_n - 1, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
+    positions = torch.arange(0, seq_len - skip_first_n, device=device).repeat(t.shape[0]).to(torch.int64)
     t = t[:, :, :d_in].flatten(0, 1)
     return t, positions
 
@@ -259,7 +260,6 @@ def train_sae(
         n_cache_workers=4,
         architecture='topk',
         lr_warmup_steps=None,
-        geom_median_file=None,
         save_every=2_500_000,
         save_checkpoints_to_s3=False,
         load_checkpoint=None,
@@ -280,17 +280,12 @@ def train_sae(
         credentials=credentials,
     )
     
-    if geom_median_file is not None:
-        geom_median = torch.load('cruft/geom_median.pt').to(device)
-    else:
-        geom_median = None
-
     if load_checkpoint is not None:
         sae = load_sae_from_checkpoint(load_checkpoint, s3_client)
     elif n_experts is not None:
         if secondary_input is not None:
-            dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
-            token_lookup = dict[secondary_input]
+            torch_dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
+            token_lookup = torch_dict[secondary_input]
             sae = LookupTopkSwitchSAE(
                 token_lookup=token_lookup, 
                 k=k, 
@@ -312,9 +307,9 @@ def train_sae(
         dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
         if architecture == 'topk':
-            sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device, geom_median=geom_median)
+            sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
         elif architecture == 'relu':
-            sae = SAE(n_features=n_feats, d_in=d_in, device=device, geom_median=geom_median)
+            sae = SAE(n_features=n_feats, d_in=d_in, device=device)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
 
@@ -335,7 +330,6 @@ def train_sae(
             'lr_warmup_steps': lr_warmup_steps,
             'architecture': architecture,
             'data_name': data_name,
-            'geom_median_file': geom_median_file,
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
@@ -357,20 +351,20 @@ def train_sae(
         overall_start = time.time()
         start = None
 
-        current_files_worth = 0
-        token_count = 0
+        token_count = start_from if start_from is not None else 0
+        current_files_worth = token_count // tokens_per_file 
         next_save = save_every
         with cache as running_cache:
             for acts in running_cache:
                 acts = acts.to(device)  # (n_samples, seq_len, d_in)
                 acts = acts[:, skip_first_n:] # (n_samples, seq_len - skip_first_n, d_in)
 
-                acts, positions = flatten_activations(acts, seq_len, skip_first_n, d_in, device)
-
                 if secondary_input is not None:
                     token_ids = acts[:, :, -1].to(torch.int64).to('cpu').flatten(0, 1)
                 else:
                     token_ids = None
+
+                acts, positions = flatten_activations(acts, seq_len, skip_first_n, d_in, device)
 
                 for idx in range(0, (acts.shape[0] // batch_size) * batch_size, batch_size):
                     token_count += batch_size
@@ -416,7 +410,7 @@ def train_sae(
                         batch_mean = batch.mean(-1, keepdim=True)
                         delta_mean = delta.mean(-1, keepdim=True)
 
-                        activation_variance = batch_mean.pow(2).sum(-1)
+                        activation_variance = (batch - batch_mean).pow(2).sum(-1)
                         delta_variance = delta_mean.pow(2).sum(-1)
                         explained_variance = (1 - delta_variance / activation_variance).mean()
 

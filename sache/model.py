@@ -67,14 +67,7 @@ class SwitchSAE(torch.nn.Module):
             'expert_weighting': expert_weighting,
         }
 
-def encode_topk(pre_activation, k):
-    return torch.topk(pre_activation, k=k, dim=-1)
 
-def eagre_decode(topk, dec):
-    latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (n_to_expert, expert_dim)
-    latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
-
-    return latent, latent @ dec
 
 class TopKSwitchSAE(SwitchSAE):
     def __init__(self, k, *args, efficient=False, **kwargs):
@@ -132,24 +125,36 @@ class SAE(torch.nn.Module):
         return latent, latent @ dec
 
     def forward_descriptive(self, x):
-        latent = self._encode(((x - self.pre_b) @ self.enc)) # (n_to_expert, expert_dim)
-        latent, reconstruction = self._decode(latent, self.dec)
+        encoded = self._encode(((x - self.pre_b) @ self.enc)) # (n_to_expert, expert_dim)
+        latent, reconstruction = self._decode(encoded, self.dec)
         
         reconstruction = reconstruction + self.pre_b 
 
+        _was_active = torch.max(latent, dim=0).values > 1e-3
         return {
             'reconstruction': reconstruction,
             'latent': latent,
             'experts_chosen': None,
             'expert_prop': None,
             'expert_weighting': None,
-            'active_latents': None,
+            'active_latents': _was_active,
         }
 
     def forward(self, x):
         recon = self.forward_descriptive(x)
         return recon
 
+
+def encode_topk(pre_activation, k):
+    return torch.topk(pre_activation, k=k, dim=-1) # (batch_size, k)
+
+def eagre_decode(topk, dec):
+    latent = torch.zeros((topk.values.shape[0], dec.shape[0]), dtype=dec.dtype, device=dec.device) # (batch_size, n_features)
+    latent.scatter_(dim=-1, index=topk.indices, src=topk.values)
+
+    return latent, latent @ dec
+
+    
 class TopKSAE(SAE):
     def __init__(self, k, *args, **kwargs):
         super(TopKSAE, self).__init__(*args, **kwargs)

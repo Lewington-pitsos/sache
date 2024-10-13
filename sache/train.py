@@ -17,10 +17,7 @@ def get_histogram(tensor, bins=50):
 
     bin_edges = np.linspace(float(tensor.min()), float(tensor.max()), bins+1)
 
-    hist_list = hist.tolist()
-    bin_edges_list = bin_edges.tolist()
-
-    return hist_list, bin_edges_list
+    return hist.tolist(), bin_edges.tolist()
 
 class TrainLogger(SacheLogger):
     def __init__(self, run_name, log_mean_std=False, max_sample=1024, *args, **kwargs):
@@ -280,6 +277,7 @@ def train_sae(
         credentials=credentials,
     )
     
+    dead_latents = torch.zeros(n_feats, device=device, requires_grad=False)
     if load_checkpoint is not None:
         sae = load_sae_from_checkpoint(load_checkpoint, s3_client)
     elif n_experts is not None:
@@ -306,6 +304,7 @@ def train_sae(
             )
         dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
+
         if architecture == 'topk':
             sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
         elif architecture == 'relu':
@@ -316,6 +315,7 @@ def train_sae(
     with train_logger as lg:
         lg.log_params({
             'k': k,
+            'd_in': d_in,
             'switch_sae': n_experts is not None,
             'skip_first_n': skip_first_n,
             'batch_norm': batch_norm,
@@ -408,10 +408,9 @@ def train_sae(
                             position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
 
                         batch_mean = batch.mean(-1, keepdim=True)
-                        delta_mean = delta.mean(-1, keepdim=True)
 
                         activation_variance = (batch - batch_mean).pow(2).sum(-1)
-                        delta_variance = delta_mean.pow(2).sum(-1)
+                        delta_variance = delta.pow(2).sum(-1)
                         explained_variance = (1 - delta_variance / activation_variance).mean()
 
 

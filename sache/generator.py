@@ -131,7 +131,7 @@ def vit_generate(
         creds,
         run_name, 
         batches_per_cache,
-        dataset, 
+        dataloader, 
         transformer_name, 
         batch_size, 
         device,
@@ -142,7 +142,6 @@ def vit_generate(
         seed=42,
         log_every=100,
         full_sequence=False,
-        num_data_workers=2,
         input_tensor_shape=None,
         num_cache_workers=5,
         print_logs=False,
@@ -166,7 +165,6 @@ def vit_generate(
             'device': device,
             'cache_type': cache_type,
             'seed': seed,
-            'num_data_workers': num_data_workers,
             'num_cache_workers': num_cache_workers,
             'hook_locations': hook_locations,
         })
@@ -182,7 +180,6 @@ def vit_generate(
             input_tensor_shape=input_tensor_shape,
             hook_locations=hook_locations, 
         )
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_data_workers)
         
         transformer.eval()
 

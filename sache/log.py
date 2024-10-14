@@ -27,10 +27,7 @@ class SacheLogger():
         self.log_dir = os.path.join(base_log_dir, self.run_name)
 
         if log_id is not None:
-            self.log_id = log_id + '_' + str(uuid4())[:10]
-
-            if os.path.exists(self._log_filename()):
-                raise ValueError(f"Log file {self._log_filename()} already exists, please provide a unique log_id")
+            self.log_id = log_id
         else:
             self.log_id = str(uuid4())
 

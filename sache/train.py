@@ -243,7 +243,7 @@ def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
 
     return checkpoint
 
-def find_s3_checkpoints(s3, bucket, prefix):
+def find_s3_checkpoint(s3, bucket, prefix):
     all_existing_checkpoints = []
     try:
         paginator = s3.get_paginator('list_objects_v2')
@@ -257,11 +257,11 @@ def find_s3_checkpoints(s3, bucket, prefix):
                 continue
 
         if not all_existing_checkpoints:
-            return None, 0
+            return None
 
     except Exception as e:
         print(f'Error fetching checkpoint from S3: {e}')
-        return None, 0
+        return None
 
     max_checkpoint = None
     max_n_tokens = 0
@@ -280,7 +280,7 @@ def find_s3_checkpoints(s3, bucket, prefix):
 
 
     max_checkpoint = f"s3://{bucket}/{max_checkpoint}" if max_checkpoint is not None else None
-    return max_checkpoint, max_n_tokens
+    return max_checkpoint
 
 
 def flatten_activations(t, seq_len, skip_first_n, d_in, device):

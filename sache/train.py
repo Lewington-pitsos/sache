@@ -453,7 +453,6 @@ def train_sae(
         n_cache_workers=4,
         architecture='topk',
         save_every=None,
-        save_checkpoints_to_s3=False,
         load_checkpoint=None,
         base_log_dir=LOG_DIR
     ):
@@ -601,7 +600,7 @@ def train_sae(
                         lg.log_id, 
                         n_iter=token_count, 
                         data_name=data_name, 
-                        s3_client=s3_client if save_checkpoints_to_s3 else None, 
+                        s3_client=s3_client,
                         bucket_name=log_bucket
                     )
                     next_save += save_every
@@ -619,7 +618,7 @@ def train_sae(
                 lg.log_id, 
                 n_iter=token_count, 
                 data_name=data_name, 
-                s3_client=s3_client if save_checkpoints_to_s3 else None, 
+                s3_client=s3_client,
                 bucket_name=log_bucket
             )
 

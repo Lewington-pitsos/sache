@@ -62,7 +62,7 @@ def main(
         creds,
         run_name,
         batches_per_cache=batches_per_cache,
-        dataset=dataloader, 
+        dataloader=dataloader, 
         transformer_name=transformer_name, 
         batch_size=batch_size, 
         device='cuda',

@@ -226,6 +226,24 @@ def save_checkpoint(
         print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
         s3_client.upload_file(model_filename, bucket_name, s3_path)
 
+def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
+    if checkpoint_path.startswith('s3://'):
+        if not os.path.exists(local_dir):
+            os.makedirs(local_dir)
+
+        local_path = f'{local_dir}/{os.path.basename(checkpoint_path)}'
+        s3_client.download_file(
+            Bucket=checkpoint_path.split('/')[2], 
+            Key='/'.join(checkpoint_path.split('/')[3:]), 
+            Filename=local_path
+        )
+        checkpoint = torch.load(local_path)
+    else:
+        checkpoint = torch.load(checkpoint_path)
+
+    return checkpoint
+
+
 def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
         return t, torch.zeros(t.shape[0], dtype=torch.int64, device=device)
@@ -271,22 +289,6 @@ def build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input
 
     return sae, dead_latents
 
-def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
-    if checkpoint_path.startswith('s3://'):
-        if not os.path.exists(local_dir):
-            os.makedirs(local_dir)
-
-        local_path = f'{local_dir}/{os.path.basename(checkpoint_path)}'
-        s3_client.download_file(
-            Bucket=checkpoint_path.split('/')[2], 
-            Key='/'.join(checkpoint_path.split('/')[3:]), 
-            Filename=local_path
-        )
-        checkpoint = torch.load(local_path)
-    else:
-        checkpoint = torch.load(checkpoint_path)
-
-    return checkpoint
 
 
 def training_step(
@@ -582,3 +584,41 @@ def train_sae(
                 bucket_name=log_bucket
             )
 
+def get_checkpoint_from_s3(s3, bucket, prefix):
+    all_existing_checkpoints = []
+    try:
+        paginator = s3.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+
+        for page in page_iterator:
+            if 'Contents' in page:
+                all_existing_checkpoints.extend([obj['Key'] for obj in page['Contents'] if obj['Key'].endswith('.pt')])
+            else:
+                # If there are no contents in the current page, continue to the next
+                continue
+
+        if not all_existing_checkpoints:
+            return None, 0
+
+    except Exception as e:
+        print(f'Error fetching checkpoint from S3: {e}')
+        return None, 0
+
+    max_checkpoint = None
+    max_n_tokens = 0
+    for checkpoint in all_existing_checkpoints:
+
+        # Extract the number of tokens from the checkpoint filename
+        try:
+            n_tokens = int(checkpoint.split('/')[-1].split('.')[0])
+        except ValueError:
+            print(f"Could not extract n_tokens from checkpoint: {checkpoint}")
+            continue
+
+        if n_tokens > max_n_tokens:
+            max_n_tokens = n_tokens
+            max_checkpoint = checkpoint
+
+
+    max_checkpoint = f"s3://{bucket}/{max_checkpoint}" if max_checkpoint is not None else None
+    return max_checkpoint, max_n_tokens

@@ -1,54 +1,45 @@
-import os
 import boto3
-import torch
-from unittest.mock import MagicMock, patch
 from moto import mock_aws
-
-from sache.train import load_sae_from_checkpoint 
+import pytest
+from sache.train import get_checkpoint_from_s3
 
 TEST_BUCKET_NAME = 'test-bucket'
 TEST_CHECKPOINT_S3 = 's3://test-bucket/test_checkpoint.pt'
 TEST_LOCAL_CHECKPOINT = 'test_checkpoint_local.pt'
+MOCK_PREFIX = 'log/CLIP-ViT-L-14/17_resid/'
 
-@mock_aws
-def test_load_sae_from_checkpoint_s3():
-    # Create a mocked S3 client and bucket
-    s3_client = boto3.client('s3', region_name='us-east-1')
-    s3_client.create_bucket(Bucket=TEST_BUCKET_NAME)
+@pytest.fixture
+def s3_setup():
+    # Setup mock S3 using moto
+    with mock_aws():
+        s3 = boto3.client('s3')
+        s3.create_bucket(Bucket=TEST_BUCKET_NAME)
+        
+        yield s3
 
-    # Mock tensor to save and upload
-    tensor = torch.tensor([1.0, 2.0, 3.0])
-    local_file_path = 'test_checkpoint.pt'
-    torch.save(tensor, local_file_path)
+def test_get_highest_checkpoint(s3_setup):
+    # Add mock checkpoints to the S3 bucket
+    s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/a/100.pt', Body=b'')
+    s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/a/200.pt', Body=b'')
+    s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/b/150.pt', Body=b'')
 
-    # Upload the tensor to the mocked S3 bucket
-    with open(local_file_path, 'rb') as f:
-        s3_client.put_object(Bucket=TEST_BUCKET_NAME, Key='test_checkpoint.pt', Body=f)
+    # Test that the function returns the highest checkpoint based on n_tokens.
+    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    assert checkpoint == 's3://test-bucket/log/CLIP-ViT-L-14/17_resid/a/200.pt'
+    assert n_tokens == 200
 
-    # Mock the local directory and function call
-    with patch('sache.train.os.makedirs') as mock_makedirs:
-        with patch('sache.train.os.path.exists', return_value=False):
-            result_tensor = load_sae_from_checkpoint(TEST_CHECKPOINT_S3, s3_client, local_dir='cruft')
+def test_reads_files_correctly(s3_setup):
+    # Add a mock checkpoint to the S3 bucket
+    s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/a/100.pt', Body=b'')
 
-            # Verify that the local directory was created
-            mock_makedirs.assert_called_once_with('cruft')
-            # Verify that the tensor was loaded correctly
-            assert torch.equal(result_tensor, tensor)
+    # Test that the function reads files correctly from the S3 bucket.
+    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    assert checkpoint == 's3://test-bucket/log/CLIP-ViT-L-14/17_resid/a/100.pt'
+    assert isinstance(n_tokens, int)
+    assert n_tokens == 100
 
-    # Clean up the local file
-    os.remove(local_file_path)
-
-@patch('sache.train.os.path.exists', return_value=True)
-def test_load_sae_from_checkpoint_local(mock_exists):
-    # Mock tensor to save locally
-    tensor = torch.tensor([4.0, 5.0, 6.0])
-    torch.save(tensor, TEST_LOCAL_CHECKPOINT)
-
-    # Call the function with the local path
-    result_tensor = load_sae_from_checkpoint(TEST_LOCAL_CHECKPOINT, MagicMock())
-
-    # Verify that the tensor was loaded correctly
-    assert torch.equal(result_tensor, tensor)
-
-    # Clean up the local file
-    os.remove(TEST_LOCAL_CHECKPOINT)
+def test_no_checkpoints(s3_setup):
+    # Test the case when there are no checkpoints in the S3 bucket.
+    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    assert checkpoint is None
+    assert n_tokens == 0

@@ -243,6 +243,45 @@ def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
 
     return checkpoint
 
+def find_s3_checkpoints(s3, bucket, prefix):
+    all_existing_checkpoints = []
+    try:
+        paginator = s3.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+
+        for page in page_iterator:
+            if 'Contents' in page:
+                all_existing_checkpoints.extend([obj['Key'] for obj in page['Contents'] if obj['Key'].endswith('.pt')])
+            else:
+                # If there are no contents in the current page, continue to the next
+                continue
+
+        if not all_existing_checkpoints:
+            return None, 0
+
+    except Exception as e:
+        print(f'Error fetching checkpoint from S3: {e}')
+        return None, 0
+
+    max_checkpoint = None
+    max_n_tokens = 0
+    for checkpoint in all_existing_checkpoints:
+
+        # Extract the number of tokens from the checkpoint filename
+        try:
+            n_tokens = int(checkpoint.split('/')[-1].split('.')[0])
+        except ValueError:
+            print(f"Could not extract n_tokens from checkpoint: {checkpoint}")
+            continue
+
+        if n_tokens > max_n_tokens:
+            max_n_tokens = n_tokens
+            max_checkpoint = checkpoint
+
+
+    max_checkpoint = f"s3://{bucket}/{max_checkpoint}" if max_checkpoint is not None else None
+    return max_checkpoint, max_n_tokens
+
 
 def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
@@ -405,7 +444,7 @@ def train_sae(
         use_wandb=True,
         shuffle=False,
         wandb_project=None,
-        log_id=None, 
+        id=None, 
         secondary_input=None,
         seq_len=1024,
         skip_first_n=0,
@@ -427,7 +466,7 @@ def train_sae(
         sae.load_state_dict(checkpoint['model_state_dict'])
         sae.to(device)
         dead_latents = checkpoint['dead_latents'].to(device)
-        log_id = checkpoint['log_id']
+        id = checkpoint['log_id']
         torch.set_rng_state(checkpoint['rng_state'])
     else:
         checkpoint = None
@@ -441,7 +480,7 @@ def train_sae(
         s3_client=s3_client, 
         use_wandb=use_wandb, 
         wandb_project=wandb_project, 
-        log_id=log_id,
+        log_id=id,
         credentials=credentials,
     )
 
@@ -584,41 +623,3 @@ def train_sae(
                 bucket_name=log_bucket
             )
 
-def get_checkpoint_from_s3(s3, bucket, prefix):
-    all_existing_checkpoints = []
-    try:
-        paginator = s3.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
-
-        for page in page_iterator:
-            if 'Contents' in page:
-                all_existing_checkpoints.extend([obj['Key'] for obj in page['Contents'] if obj['Key'].endswith('.pt')])
-            else:
-                # If there are no contents in the current page, continue to the next
-                continue
-
-        if not all_existing_checkpoints:
-            return None, 0
-
-    except Exception as e:
-        print(f'Error fetching checkpoint from S3: {e}')
-        return None, 0
-
-    max_checkpoint = None
-    max_n_tokens = 0
-    for checkpoint in all_existing_checkpoints:
-
-        # Extract the number of tokens from the checkpoint filename
-        try:
-            n_tokens = int(checkpoint.split('/')[-1].split('.')[0])
-        except ValueError:
-            print(f"Could not extract n_tokens from checkpoint: {checkpoint}")
-            continue
-
-        if n_tokens > max_n_tokens:
-            max_n_tokens = n_tokens
-            max_checkpoint = checkpoint
-
-
-    max_checkpoint = f"s3://{bucket}/{max_checkpoint}" if max_checkpoint is not None else None
-    return max_checkpoint, max_n_tokens

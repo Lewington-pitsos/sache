@@ -3,7 +3,7 @@ from moto import mock_aws
 import pytest
 import torch
 from sache.model import SAE
-from sache.train import get_checkpoint_from_s3, save_checkpoint, load_checkpoint
+from sache.train import find_s3_checkpoints, save_checkpoint, load_checkpoint
 
 TEST_BUCKET_NAME = 'test-bucket'
 TEST_CHECKPOINT_S3 = 's3://test-bucket/test_checkpoint.pt'
@@ -86,7 +86,6 @@ def test_save_and_load_sae(tmp_path):
             else:
                 assert v_original == v_loaded, f"Optimizer state {k} does not match after loading"
 
-
 def test_save_checkpoint_and_find(s3_setup):
     # Initialize model parameters
     n_features = 10
@@ -121,8 +120,8 @@ def test_save_checkpoint_and_find(s3_setup):
         bucket_name=TEST_BUCKET_NAME
     )
 
-    # Use get_checkpoint_from_s3 to find the checkpoint
-    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    prefix = f'{base_dir}/{data_name}/{log_id}'
+    checkpoint, n_tokens = find_s3_checkpoints(s3_setup, TEST_BUCKET_NAME, prefix)
 
     # Expected checkpoint path
     expected_checkpoint = f's3://{TEST_BUCKET_NAME}/{base_dir}/{data_name}/{log_id}/{n_iter}.pt'
@@ -166,8 +165,8 @@ def test_find_highest_checkpoint(s3_setup):
         )
 
     # Use get_checkpoint_from_s3 to find the checkpoint with the highest n_tokens
-    prefix = f'{base_dir}/{data_name}/{log_id}/'
-    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, prefix)
+    prefix = f'{base_dir}/{data_name}/{log_id}'
+    checkpoint, n_tokens = find_s3_checkpoints(s3_setup, TEST_BUCKET_NAME, prefix)
 
     # Expected checkpoint is the one with the highest token_count
     max_token_count = max(token_counts)
@@ -182,7 +181,7 @@ def test_get_highest_checkpoint(s3_setup):
     s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/b/150.pt', Body=b'')
 
     # Test that the function returns the highest checkpoint based on n_tokens.
-    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    checkpoint, n_tokens = find_s3_checkpoints(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
     assert checkpoint == 's3://test-bucket/log/CLIP-ViT-L-14/17_resid/a/200.pt'
     assert n_tokens == 200
 
@@ -191,13 +190,13 @@ def test_reads_files_correctly(s3_setup):
     s3_setup.put_object(Bucket=TEST_BUCKET_NAME, Key='log/CLIP-ViT-L-14/17_resid/a/100.pt', Body=b'')
 
     # Test that the function reads files correctly from the S3 bucket.
-    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    checkpoint, n_tokens = find_s3_checkpoints(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
     assert checkpoint == 's3://test-bucket/log/CLIP-ViT-L-14/17_resid/a/100.pt'
     assert isinstance(n_tokens, int)
     assert n_tokens == 100
 
 def test_no_checkpoints(s3_setup):
     # Test the case when there are no checkpoints in the S3 bucket.
-    checkpoint, n_tokens = get_checkpoint_from_s3(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
+    checkpoint, n_tokens = find_s3_checkpoints(s3_setup, TEST_BUCKET_NAME, MOCK_PREFIX)
     assert checkpoint is None
     assert n_tokens == 0

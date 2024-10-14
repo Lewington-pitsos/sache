@@ -1,7 +1,6 @@
 import time
 import json
 import os
-import trace
 from uuid import uuid4
 import boto3
 import torch

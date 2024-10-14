@@ -184,7 +184,7 @@ class TrainLogger(SacheLogger):
         self.log_sae(sae, info=info)
 
 
-def save_checkpoint(
+def save_sae_checkpoint(
         sae, 
         optimizer, 
         token_count, 
@@ -226,7 +226,7 @@ def save_checkpoint(
         print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
         s3_client.upload_file(model_filename, bucket_name, s3_path)
 
-def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
+def load_sae_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
     if checkpoint_path.startswith('s3://'):
         if not os.path.exists(local_dir):
             os.makedirs(local_dir)
@@ -460,7 +460,7 @@ def train_sae(
     sae, dead_latents = build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input)
     
     if load_checkpoint is not None:
-        checkpoint = load_checkpoint(load_checkpoint, s3_client)
+        checkpoint = load_sae_checkpoint(load_checkpoint, s3_client)
         starting_token = checkpoint['token_count']
         sae.load_state_dict(checkpoint['model_state_dict'])
         sae.to(device)
@@ -592,7 +592,7 @@ def train_sae(
                     start = time.time()
 
                 if next_save is not None and token_count >= next_save:
-                    save_checkpoint(
+                    save_sae_checkpoint(
                         sae, 
                         optimizer, 
                         token_count, 
@@ -610,7 +610,7 @@ def train_sae(
 
         # out of the cache download loop
         if save_every is not None:
-            save_checkpoint(
+            save_sae_checkpoint(
                 sae, 
                 optimizer, 
                 token_count, 

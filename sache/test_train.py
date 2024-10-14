@@ -4,7 +4,7 @@ from moto import mock_aws
 import pytest
 import torch
 from sache.model import SAE
-from sache.train import find_s3_checkpoint, save_checkpoint, load_checkpoint
+from sache.train import find_s3_checkpoint, save_sae_checkpoint, load_sae_checkpoint
 
 TEST_BUCKET_NAME = 'test-bucket'
 TEST_CHECKPOINT_S3 = 's3://test-bucket/test_checkpoint.pt'
@@ -41,7 +41,7 @@ def test_save_and_load_sae(tmp_path):
     data_name = 'test_data'
 
     # Save checkpoint to a temporary directory
-    save_checkpoint(
+    save_sae_checkpoint(
         sae=sae,
         optimizer=optimizer,
         token_count=token_count,
@@ -108,7 +108,7 @@ def test_save_checkpoint_and_find(s3_setup):
     base_dir = 'log'
 
     # Save checkpoint to mock S3
-    save_checkpoint(
+    save_sae_checkpoint(
         sae=sae,
         optimizer=optimizer,
         token_count=token_count,
@@ -151,7 +151,7 @@ def test_find_highest_checkpoint(s3_setup):
     token_counts = [100, 200, 150]
     for token_count in token_counts:
         n_iter = token_count
-        save_checkpoint(
+        save_sae_checkpoint(
             sae=sae,
             optimizer=optimizer,
             token_count=token_count,
@@ -218,7 +218,7 @@ def test_load_checkpoint_from_local(tmp_path):
 
     # Save checkpoint to a temporary directory
     base_dir = str(tmp_path)
-    save_checkpoint(
+    save_sae_checkpoint(
         sae=sae,
         optimizer=optimizer,
         token_count=token_count,
@@ -236,7 +236,7 @@ def test_load_checkpoint_from_local(tmp_path):
     checkpoint_path = str(model_filename)
 
     # Load the checkpoint using load_checkpoint
-    checkpoint = load_checkpoint(checkpoint_path, s3_client=None)
+    checkpoint = load_sae_checkpoint(checkpoint_path, s3_client=None)
 
     # Verify that the checkpoint contains the expected data
     assert checkpoint['token_count'] == token_count
@@ -276,7 +276,7 @@ def test_load_checkpoint_from_s3(s3_setup, tmp_path):
     base_dir = 'log'
 
     # Save checkpoint to mock S3
-    save_checkpoint(
+    save_sae_checkpoint(
         sae=sae,
         optimizer=optimizer,
         token_count=token_count,
@@ -293,7 +293,7 @@ def test_load_checkpoint_from_s3(s3_setup, tmp_path):
     checkpoint_path = f's3://{TEST_BUCKET_NAME}/{base_dir}/{data_name}/{log_id}/{n_iter}.pt'
 
     # Load the checkpoint using load_checkpoint
-    checkpoint = load_checkpoint(checkpoint_path, s3_client=s3_setup, local_dir=str(tmp_path))
+    checkpoint = load_sae_checkpoint(checkpoint_path, s3_client=s3_setup, local_dir=str(tmp_path))
 
     # Verify that the checkpoint contains the expected data
     assert checkpoint['token_count'] == token_count
@@ -320,7 +320,7 @@ def test_load_checkpoint_file_not_found(tmp_path):
     # Attempt to load a non-existent checkpoint file
     non_existent_checkpoint_path = tmp_path / 'non_existent_checkpoint.pt'
     with pytest.raises(FileNotFoundError):
-        load_checkpoint(str(non_existent_checkpoint_path), s3_client=None)
+        load_sae_checkpoint(str(non_existent_checkpoint_path), s3_client=None)
 
 def test_load_checkpoint_invalid_format(tmp_path):
     # Create an invalid checkpoint file
@@ -330,4 +330,4 @@ def test_load_checkpoint_invalid_format(tmp_path):
 
     # Attempt to load the invalid checkpoint file
     with pytest.raises((RuntimeError, torch.serialization.pickle.UnpicklingError, EOFError)):
-        load_checkpoint(str(invalid_checkpoint_path), s3_client=None)
+        load_sae_checkpoint(str(invalid_checkpoint_path), s3_client=None)

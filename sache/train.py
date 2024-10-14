@@ -1,6 +1,6 @@
+from math import log
 import os
 import time
-import token
 
 import torch
 import numpy as np
@@ -20,9 +20,8 @@ def get_histogram(tensor, bins=50):
     return hist.tolist(), bin_edges.tolist()
 
 class TrainLogger(SacheLogger):
-    def __init__(self, run_name, log_mean_std=False, max_sample=1024, *args, **kwargs):
+    def __init__(self, run_name, max_sample=1024, *args, **kwargs):
         super(TrainLogger, self).__init__(run_name, *args, **kwargs)
-        self.log_mean_std = log_mean_std
         self.max_sample = max_sample
 
     def log_sae(self, sae, info=None):
@@ -132,11 +131,10 @@ class TrainLogger(SacheLogger):
             if l1 is not None:
                 message['l1'] = l1.item()
 
-            if self.log_mean_std:
-                message.update({
-                    'input_mean': batch.mean(dim=(0, 1)).cpu().numpy().tolist(), 
-                    'input_std': batch.std(dim=(0, 1)).cpu().numpy().tolist()
-                })
+            message.update({
+                'input_mean': batch.mean().cpu().item(), 
+                'input_std': batch.std().cpu().item()
+            })
 
             self.log(message)
 
@@ -185,23 +183,45 @@ class TrainLogger(SacheLogger):
 
         self.log_sae(sae, info=info)
 
-def save_sae(sae, n_iter, data_name, name, base_dir='log', s3_client=None, bucket_name=None):
+
+def save_checkpoint(
+        sae, 
+        optimizer, 
+        token_count, 
+        dead_latents, 
+        log_id,
+        n_iter=None, 
+        data_name=None, 
+        base_dir='log', 
+        s3_client=None, 
+        bucket_name=None
+    ):
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
     
-    model_dir = os.path.join(base_dir, data_name, name)
+    model_dir = os.path.join(base_dir, data_name, log_id)
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
     model_filename = os.path.join(model_dir, f'{n_iter}.pt')
-    torch.save(sae, model_filename)
+    
+    checkpoint = {
+        'model_state_dict': sae.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'token_count': token_count,
+        'dead_latents': dead_latents,
+        'n_iter': n_iter,
+        'log_id': log_id,
+        'rng_state': torch.get_rng_state(),
+    }
+
+    torch.save(checkpoint, model_filename)
 
     if s3_client is not None:
-        
         if bucket_name is None:
             raise ValueError('bucket_name must be provided if s3_client is provided')
-        s3_path = f'{base_dir}/{data_name}/{name}/{n_iter}.pt'
+        s3_path = f'{base_dir}/{data_name}/{log_id}/{n_iter}.pt'
 
         print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
         s3_client.upload_file(model_filename, bucket_name, s3_path)
@@ -214,73 +234,8 @@ def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     t = t[:, :, :d_in].flatten(0, 1)
     return t, positions
 
-def load_sae_from_checkpoint(checkpoint, s3_client, local_dir='cruft'):
-    if checkpoint.startswith('s3://'):
-        if not os.path.exists(local_dir):
-            os.makedirs(local_dir)
-
-        local_path = f'{local_dir}/{os.path.basename(checkpoint)}'
-        s3_client.download_file(
-            Bucket=checkpoint.split('/')[2], 
-            Key='/'.join(checkpoint.split('/')[3:]), 
-            Filename=local_path
-        )
-        return torch.load(local_path)
-    else:
-        return torch.load(checkpoint)
-
-def train_sae(
-        data_name,
-        credentials,
-        log_bucket,
-        data_bucket,
-        n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
-        k = 32,
-        n_feats = 24576,
-        d_in = 768,
-        batch_size = 4096,
-        n_experts = None,
-        l1_coefficient = 2e-3,
-        privilege_weighting = 1e-2,
-        lr = 3e-4,
-        tokens_till_latent_dies = 10_000_000,
-        device = 'cuda',
-        use_wandb=True,
-        shuffle=False,
-        wandb_project=None,
-        name=None, 
-        secondary_input=None,
-        seq_len=1024,
-        skip_first_n=0,
-        batch_norm=True,
-        cache_buffer_size=3,
-        n_cache_workers=4,
-        architecture='topk',
-        lr_warmup_steps=None,
-        save_every=2_500_000,
-        save_checkpoints_to_s3=False,
-        load_checkpoint=None,
-        start_from=None,
-        base_log_dir=LOG_DIR
-    ):
-    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
-    
-    train_logger = TrainLogger(
-        data_name, 
-        base_log_dir=base_log_dir,
-        log_mean_std=True, 
-        s3_backup_bucket=log_bucket, 
-        s3_client=s3_client, 
-        use_wandb=use_wandb, 
-        wandb_project=wandb_project, 
-        log_id=name,
-        credentials=credentials,
-    )
-    
-    dead_latents = torch.zeros(n_feats, device=device, requires_grad=False)
-    if load_checkpoint is not None:
-        sae = load_sae_from_checkpoint(load_checkpoint, s3_client)
-    elif n_experts is not None:
+def build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input=None):
+    if n_experts is not None:
         if secondary_input is not None:
             torch_dict = torch.load('cruft/unigrams_gpt2_blocks.10.hook_resid_post_norm.pth', weights_only=True)
             token_lookup = torch_dict[secondary_input]
@@ -304,13 +259,189 @@ def train_sae(
             )
         dead_latents = torch.zeros(n_experts, sae.expert_dim, device=device, requires_grad=False)
     else:
-
         if architecture == 'topk':
             sae = TopKSAE(k=k, n_features=n_feats, d_in=d_in, device=device)
         elif architecture == 'relu':
             sae = SAE(n_features=n_feats, d_in=d_in, device=device)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
+
+
+        dead_latents = torch.zeros(n_feats, device=device, requires_grad=False)
+
+    return sae, dead_latents
+
+def load_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
+    if checkpoint_path.startswith('s3://'):
+        if not os.path.exists(local_dir):
+            os.makedirs(local_dir)
+
+        local_path = f'{local_dir}/{os.path.basename(checkpoint_path)}'
+        s3_client.download_file(
+            Bucket=checkpoint_path.split('/')[2], 
+            Key='/'.join(checkpoint_path.split('/')[3:]), 
+            Filename=local_path
+        )
+        checkpoint = torch.load(local_path)
+    else:
+        checkpoint = torch.load(checkpoint_path)
+
+    return checkpoint
+
+
+def training_step(
+        sae, 
+        optimizer, 
+        batch, 
+        batch_size,
+        dead_latents, 
+        tokens_till_latent_dies, 
+        l1_coefficient, 
+        privilege_weighting, 
+        skip_first_n, 
+        seq_len, 
+        batch_positions, 
+        architecture, 
+        secondary_input, 
+        batch_norm,
+        logger,
+        token_ids=None,
+    ):
+    if batch_norm:
+        with torch.no_grad():
+            batch_mean = batch.mean(dim=0, keepdim=True)
+            batch_std = batch.std(dim=0, keepdim=True)
+            batch = (batch - batch_mean) / (batch_std + 1e-6)
+
+    if secondary_input is not None:
+        output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
+    else:
+        output = sae.forward_descriptive(batch)
+        
+    reconstruction = output['reconstruction']
+
+    if output['active_latents'] is not None:
+        with torch.no_grad():
+            dead_latents[output['active_latents']] = 0
+            dead_latents += batch_size
+            dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
+    else:
+        dead_latent_pct = None
+
+    delta = batch - reconstruction
+    delta_pow = delta.pow(2)
+    
+    with torch.no_grad():
+        sample_mse = delta_pow.mean(dim=1)
+        if skip_first_n > 0:
+            mse_sum = torch.bincount(batch_positions, weights=sample_mse)
+            position_counts = torch.bincount(batch_positions)
+            position_mse = mse_sum / torch.clamp(position_counts, min=1)
+        elif seq_len == 1:
+            position_mse = sample_mse.mean().unsqueeze(0)
+        else:
+            position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
+
+        batch_mean = batch.mean(-1, keepdim=True)
+
+        activation_variance = (batch - batch_mean).pow(2).sum(-1)
+        delta_variance = delta.pow(2).sum(-1)
+        explained_variance = (1 - delta_variance / activation_variance).mean()
+
+
+    mse = delta_pow.mean()
+    variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt() + 1e-9).mean()
+    sum_mse = delta_pow.sum(dim=-1).mean()   
+
+    if output['expert_weighting'] is not None:
+        expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
+        loss = variance_prop_mse + (expert_privilege * privilege_weighting)
+    else:
+        expert_privilege = None
+
+    if architecture == 'relu':
+        l1 = output['latent'].abs().sum(dim=1).mean()
+        loss = variance_prop_mse + l1_coefficient * l1
+    else:
+        loss = variance_prop_mse
+        l1 = None
+
+
+    logger.log_loss(
+        mse=mse, 
+        sum_mse=sum_mse,
+        l1=l1, 
+        loss=loss, 
+        batch=batch, 
+        latent=output['latent'], 
+        dead_pct=dead_latent_pct, 
+        expert_privilege=expert_privilege,
+        lr=optimizer.param_groups[0]['lr'],
+        position_mse=position_mse,
+        explained_variance=explained_variance,
+        variance_prop_mse=variance_prop_mse,
+    )
+
+    return loss, output
+
+def train_sae(
+        data_name,
+        credentials,
+        log_bucket,
+        data_bucket,
+        n_tokens = 32 * 1024 * 1024, # 647 files is the total, 288 means just over 300,000,000 tokens
+        k = 32,
+        n_feats = 24576,
+        d_in = 768,
+        batch_size = 4096,
+        n_experts = None,
+        l1_coefficient = 2e-3,
+        privilege_weighting = 1e-2,
+        lr = 3e-4,
+        tokens_till_latent_dies = 10_000_000,
+        device = 'cuda',
+        use_wandb=True,
+        shuffle=False,
+        wandb_project=None,
+        log_id=None, 
+        secondary_input=None,
+        seq_len=1024,
+        skip_first_n=0,
+        batch_norm=True,
+        cache_buffer_size=3,
+        n_cache_workers=4,
+        architecture='topk',
+        save_every=None,
+        save_checkpoints_to_s3=False,
+        load_checkpoint=None,
+        base_log_dir=LOG_DIR
+    ):
+    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
+    sae, dead_latents = build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input)
+    
+    if load_checkpoint is not None:
+        checkpoint = load_checkpoint(load_checkpoint, s3_client)
+        starting_token = checkpoint['token_count']
+        sae.load_state_dict(checkpoint['model_state_dict'])
+        sae.to(device)
+        dead_latents = checkpoint['dead_latents'].to(device)
+        log_id = checkpoint['log_id']
+        torch.set_rng_state(checkpoint['rng_state'])
+    else:
+        checkpoint = None
+        starting_token = 0
+
+
+    train_logger = TrainLogger(
+        data_name,
+        base_log_dir=base_log_dir,
+        s3_backup_bucket=log_bucket, 
+        s3_client=s3_client, 
+        use_wandb=use_wandb, 
+        wandb_project=wandb_project, 
+        log_id=log_id,
+        credentials=credentials,
+    )
 
     with train_logger as lg:
         lg.log_params({
@@ -327,17 +458,21 @@ def train_sae(
             'batch_size': batch_size,
             'learning_rate': lr,
             'l1_coefficient': l1_coefficient,
-            'lr_warmup_steps': lr_warmup_steps,
             'architecture': architecture,
             'data_name': data_name,
         })
         lg.log_sae(sae)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
 
-        if lr_warmup_steps is not None:
-            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: min(1, epoch / lr_warmup_steps))
+        if checkpoint is not None:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        optimizer.state[k] = v.to(device)
 
-        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_from=start_from)
+
+        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_from=starting_token)
         print('total number of files to download', len(cache))
 
         total_size = cache.metadata['bytes_per_file']
@@ -348,12 +483,11 @@ def train_sae(
         else:
             pass
 
-        overall_start = time.time()
         start = None
 
-        token_count = start_from if start_from is not None else 0
+        token_count = starting_token if starting_token is not None else 0
         current_files_worth = token_count // tokens_per_file 
-        next_save = token_count + save_every
+        next_save = token_count + save_every if save_every is not None else None
         with cache as running_cache:
             for acts in running_cache:
                 acts = acts.to(device)  # (n_samples, seq_len, d_in)
@@ -372,101 +506,39 @@ def train_sae(
                     batch_positions = positions[idx:idx+batch_size]
 
                     optimizer.zero_grad()
-                    if batch_norm:
-                        with torch.no_grad():
-                            batch_mean = batch.mean(dim=0, keepdim=True)
-                            batch_std = batch.std(dim=0, keepdim=True)
-                            batch = (batch - batch_mean) / (batch_std + 1e-6)
-
-                    if secondary_input is not None:
-                        output = sae.forward_descriptive(batch, token_ids) # (batch_size, d_in), (batch_size, expert_dim), (n_experts, expert_dim)
-                    else:
-                        output = sae.forward_descriptive(batch)
-                        
-                    reconstruction = output['reconstruction']
-
-                    if output['active_latents'] is not None:
-                        with torch.no_grad():
-                            dead_latents[output['active_latents']] = 0
-                            dead_latents += batch_size
-                            dead_latent_pct = (dead_latents >= tokens_till_latent_dies).to(torch.float32).mean()
-                    else:
-                        dead_latent_pct = None
-
-                    delta = batch - reconstruction
-                    delta_pow = delta.pow(2)
                     
-                    with torch.no_grad():
-                        sample_mse = delta_pow.mean(dim=1)
-                        if skip_first_n > 0:
-                            mse_sum = torch.bincount(batch_positions, weights=sample_mse)
-                            position_counts = torch.bincount(batch_positions)
-                            position_mse = mse_sum / torch.clamp(position_counts, min=1)
-                        elif seq_len == 1:
-                            position_mse = sample_mse.mean().unsqueeze(0)
-                        else:
-                            position_mse = sample_mse.reshape(-1, seq_len).mean(dim=0)
-
-                        batch_mean = batch.mean(-1, keepdim=True)
-
-                        activation_variance = (batch - batch_mean).pow(2).sum(-1)
-                        delta_variance = delta.pow(2).sum(-1)
-                        explained_variance = (1 - delta_variance / activation_variance).mean()
-
-
-                    mse = delta_pow.mean()
-                    variance_prop_mse = (delta_pow / batch.pow(2).sum(-1, keepdim=True).sqrt()).mean()
-                    sum_mse = delta_pow.sum(dim=-1).mean()   
-
-                    if output['expert_weighting'] is not None:
-                        expert_privilege = sae.n_experts * (output['expert_weighting'] * output['expert_prop']).sum()
-                        loss = variance_prop_mse + (expert_privilege * privilege_weighting)
-                    else:
-                        expert_privilege = None
-
-                    if architecture == 'relu':
-                        l1 = output['latent'].abs().sum(dim=1).mean()
-                        loss = variance_prop_mse + l1_coefficient * l1
-                    else:
-                        loss = variance_prop_mse
-                        l1 = None
-
-                    latent = output['latent']
-                    experts_chosen = output['experts_chosen']
+                    loss, output = training_step(
+                        sae=sae,
+                        optimizer=optimizer,
+                        batch=batch,
+                        batch_size=batch_size,
+                        dead_latents=dead_latents,
+                        tokens_till_latent_dies=tokens_till_latent_dies,
+                        l1_coefficient=l1_coefficient,
+                        privilege_weighting=privilege_weighting,
+                        skip_first_n=skip_first_n,
+                        seq_len=seq_len,
+                        batch_positions=batch_positions,
+                        architecture=architecture,
+                        secondary_input=secondary_input,
+                        batch_norm=batch_norm,
+                        logger=lg,
+                        token_ids=token_ids,
+                    )
 
                     loss.backward()
                     optimizer.step()
-                    if lr_warmup_steps is not None:
-                        scheduler.step()
-
-                    lg.log_loss(
-                        mse=mse, 
-                        sum_mse=sum_mse,
-                        l1=l1, 
-                        loss=loss, 
-                        batch=batch, 
-                        latent=latent, 
-                        dead_pct=dead_latent_pct, 
-                        expert_privilege=expert_privilege,
-                        lr=optimizer.param_groups[0]['lr'],
-                        position_mse=position_mse,
-                        explained_variance=explained_variance,
-                        variance_prop_mse=variance_prop_mse,
-                    )
-
+ 
                     if token_count >= n_tokens:
-                        overall_end = time.time()
-                        print(f"Overall time taken: {overall_end - overall_start:.2f} seconds")
                         break
 
                 files_worth = token_count // tokens_per_file
                 if files_worth > current_files_worth:
                     current_files_worth = files_worth
-                    lg.log_batch(sae=sae, batch=batch, reconstruction=reconstruction, latent=latent, experts_chosen=experts_chosen)
+                    lg.log_batch(sae=sae, batch=batch, reconstruction=output['reconstruction'], latent=output['latent'], experts_chosen=output['experts_chosen'])
                     end = time.time()
                     if start is not None:
                         elapsed = end - start
-                        overall_elapsed = end - overall_start
                         print(f"Time taken for {files_worth} files worth of activations: {elapsed:.2f} seconds, MB per second: {total_size / MB / elapsed:.2f}")
                         lg.log({
                             'event': 'file_processed',
@@ -474,18 +546,20 @@ def train_sae(
                             'mb_downloaded': total_size / MB, 
                             'mbps': total_size / MB / elapsed,
                             'tokens_per_second': tokens_per_file / elapsed,
-                            'total_time_elapsed': overall_elapsed,
                             'file': files_worth,
                         })
 
                     start = time.time()
 
                 if next_save is not None and token_count >= next_save:
-                    save_sae(
+                    save_checkpoint(
                         sae, 
+                        optimizer, 
                         token_count, 
-                        data_name, 
+                        dead_latents, 
                         lg.log_id, 
+                        n_iter=token_count, 
+                        data_name=data_name, 
                         s3_client=s3_client if save_checkpoints_to_s3 else None, 
                         bucket_name=log_bucket
                     )
@@ -496,11 +570,14 @@ def train_sae(
 
         # out of the cache download loop
         if save_every is not None:
-            save_sae(
+            save_checkpoint(
                 sae, 
+                optimizer, 
                 token_count, 
-                data_name, 
+                dead_latents, 
                 lg.log_id, 
+                n_iter=token_count, 
+                data_name=data_name, 
                 s3_client=s3_client if save_checkpoints_to_s3 else None, 
                 bucket_name=log_bucket
             )

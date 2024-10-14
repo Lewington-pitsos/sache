@@ -12,23 +12,23 @@ LOG_DIR = 'log'
 
 class SacheLogger():
     def __init__(
-                self, 
-                run_name,
-                base_log_dir=LOG_DIR, 
-                s3_backup_bucket=None, 
-                s3_client=None, 
-                use_wandb=False, 
-                wandb_project=None, 
-                log_id=None, 
-                print_logs=False,
-                credentials=None,
+            self, 
+            run_name,
+            base_log_dir=LOG_DIR, 
+            s3_backup_bucket=None, 
+            s3_client=None, 
+            use_wandb=False, 
+            wandb_project=None, 
+            log_id=None, 
+            print_logs=False,
+            credentials=None,
         ):
         self.run_name = run_name
         self.print_logs = print_logs
         self.log_dir = os.path.join(base_log_dir, self.run_name)
 
         if log_id is not None:
-            self.log_id = log_id + '_' + str(uuid4())[:6]
+            self.log_id = log_id + '_' + str(uuid4())[:10]
 
             if os.path.exists(self._log_filename()):
                 raise ValueError(f"Log file {self._log_filename()} already exists, please provide a unique log_id")
@@ -48,6 +48,11 @@ class SacheLogger():
             self.s3_backup_path = os.path.join(self.log_dir, self.log_id + '.jsonl')
             self.s3_client = s3_client
 
+            response = s3_client.list_objects_v2(Bucket=s3_backup_bucket, Prefix=self.s3_backup_path)
+            if 'Contents' in response:
+                print('Log file already exists in S3, downloading')
+                download_logs(s3_backup_bucket, s3_folder_prefix=self.log_dir, local_download_path=self._log_filename())
+
         if use_wandb:
             if credentials is not None:
                 os.environ["WANDB_API_KEY"] = credentials['WANDB_API_KEY']
@@ -56,7 +61,7 @@ class SacheLogger():
                 wandb_project = self.run_name
             
             self.wandb_project = wandb_project
-            wandb.init(project=wandb_project, name=self.log_id)
+            wandb.init(project=wandb_project, name=self.log_id, id=self.log_id, resume='must')
 
     def _log_filename(self):
         return os.path.join(self.log_dir, self.log_id + '.jsonl')

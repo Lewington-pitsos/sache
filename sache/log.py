@@ -57,7 +57,7 @@ class SacheLogger():
                 wandb_project = self.run_name
             
             self.wandb_project = wandb_project
-            wandb.init(project=wandb_project, name=self.log_id, id=self.log_id, resume='must')
+            wandb.init(project=wandb_project, name=self.log_id, id=self.log_id, resume='allow')
 
     def _log_filename(self):
         return os.path.join(self.log_dir, self.log_id + '.jsonl')

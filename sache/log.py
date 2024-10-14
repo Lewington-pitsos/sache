@@ -2,7 +2,6 @@ import time
 import json
 import os
 from uuid import uuid4
-import boto3
 import torch
 import psutil
 import wandb
@@ -47,7 +46,7 @@ class SacheLogger():
             response = s3_client.list_objects_v2(Bucket=s3_backup_bucket, Prefix=self.s3_backup_path)
             if 'Contents' in response:
                 print('Log file already exists in S3, downloading')
-                download_logs(s3_backup_bucket, s3_folder_prefix=self.log_dir, local_download_path=self._log_filename())
+                s3_client.download_file(s3_backup_bucket, self.s3_backup_path, self._log_filename())
 
         if use_wandb:
             if credentials is not None:
@@ -116,32 +115,6 @@ class SacheLogger():
     def __exit__(self, exc_type, exc_value, traceback):
         self.finalize()
             
-
-
-def download_logs(bucket_name, s3_folder_prefix=LOG_DIR, local_download_path=LOG_DIR):
-    # Load credentials
-    with open('.credentials.json') as f:
-        credentials = json.load(f)
-
-    # Create an S3 client
-    s3_client = boto3.client('s3', aws_access_key_id=credentials['AWS_ACCESS_KEY_ID'], aws_secret_access_key=credentials['AWS_SECRET'])
-
-    # List objects in the specified folder
-    response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=s3_folder_prefix)
-
-    # Check if there are contents
-    if 'Contents' in response:
-        for item in response['Contents']:
-            file_path = item['Key']
-            local_file_path = os.path.join(local_download_path, file_path[len(s3_folder_prefix) + 1:].replace('/', '_'))
-            
-            # Create local directory structure if it does not exist
-            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-            # Download the file
-            s3_client.download_file(bucket_name, file_path, local_file_path)
-            print(f"Downloaded {file_path} to {local_file_path}")
-
 class NOOPLogger:
     def __enter__(self):
         return self

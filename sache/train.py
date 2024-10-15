@@ -226,7 +226,7 @@ def save_sae_checkpoint(
         print(f'Uploading {model_filename} to {bucket_name}/{s3_path}')
         s3_client.upload_file(model_filename, bucket_name, s3_path)
 
-def load_sae_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
+def load_sae_checkpoint(checkpoint_path, s3_client, local_dir='cruft', device='cpu'):
     if checkpoint_path.startswith('s3://'):
         if not os.path.exists(local_dir):
             os.makedirs(local_dir)
@@ -237,9 +237,9 @@ def load_sae_checkpoint(checkpoint_path, s3_client, local_dir='cruft'):
             Key='/'.join(checkpoint_path.split('/')[3:]), 
             Filename=local_path
         )
-        checkpoint = torch.load(local_path)
+        checkpoint = torch.load(local_path, map_location=device)
     else:
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
 
     return checkpoint
 
@@ -281,7 +281,6 @@ def find_s3_checkpoint(s3, bucket, prefix):
 
     max_checkpoint = f"s3://{bucket}/{max_checkpoint}" if max_checkpoint is not None else None
     return max_checkpoint
-
 
 def flatten_activations(t, seq_len, skip_first_n, d_in, device):
     if len(t.shape) == 2:
@@ -327,8 +326,6 @@ def build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input
         dead_latents = torch.zeros(n_feats, device=device, requires_grad=False)
 
     return sae, dead_latents
-
-
 
 def training_step(
         sae, 
@@ -460,14 +457,18 @@ def train_sae(
     sae, dead_latents = build_sae(n_feats, d_in, k, n_experts, device, architecture, secondary_input)
     
     if load_checkpoint is not None:
-        checkpoint = load_sae_checkpoint(load_checkpoint, s3_client)
+        checkpoint = load_sae_checkpoint(load_checkpoint, s3_client, device=device)
         starting_token = checkpoint['token_count']
         sae.load_state_dict(checkpoint['model_state_dict'])
         sae.to(device)
         dead_latents = checkpoint['dead_latents'].to(device)
         id = checkpoint['log_id']
         torch.set_rng_state(checkpoint['rng_state'])
+
+        optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     else:
+        optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
         checkpoint = None
         starting_token = 0
 
@@ -502,15 +503,6 @@ def train_sae(
             'data_name': data_name,
         })
         lg.log_sae(sae)
-        optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
-
-        if checkpoint is not None:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        optimizer.state[k] = v.to(device)
-
 
         cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_from=starting_token)
         print('total number of files to download', len(cache))

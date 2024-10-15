@@ -87,6 +87,10 @@ def test_save_and_load_sae(tmp_path):
             else:
                 assert v_original == v_loaded, f"Optimizer state {k} does not match after loading"
 
+    optimizer_loaded.zero_grad()
+    optimizer_loaded.step()
+    
+
 def test_save_checkpoint_and_find(s3_setup):
     # Initialize model parameters
     n_features = 10

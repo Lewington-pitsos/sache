@@ -213,7 +213,6 @@ def save_sae_checkpoint(
         'dead_latents': dead_latents,
         'n_iter': n_iter,
         'log_id': log_id,
-        'rng_state': torch.get_rng_state(),
     }
 
     torch.save(checkpoint, model_filename)
@@ -463,7 +462,6 @@ def train_sae(
         sae.to(device)
         dead_latents = checkpoint['dead_latents'].to(device)
         id = checkpoint['log_id']
-        torch.set_rng_state(checkpoint['rng_state'])
 
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

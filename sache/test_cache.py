@@ -97,7 +97,7 @@ def test_batched_cache(s3_client):
 
     assert count == 16
 
-def test_s3_read_cache_start_from(s3_client):
+def test_s3_read_cache_start_token(s3_client):
     s3_prefix, s3_client = s3_client
 
     # Define metadata for the test
@@ -138,15 +138,13 @@ def test_s3_read_cache_start_from(s3_client):
     # Calculate tokens per file based on metadata
     tokens_per_file = metadata['batches_per_file'] * metadata['batch_size'] * metadata['sequence_length']
 
-    # Set 'start_from' to skip the first two files
-    start_from = tokens_per_file * 2  # Start from the 2nd file
+    start_at_token = tokens_per_file * 2  # Start from the 2nd file
 
-    # Initialize S3RCache with the 'start_from' parameter
     cache = S3RCache(
         s3_client, 
         s3_prefix, 
         TEST_BUCKET_NAME, 
-        start_from=start_from,
+        start_at_token=start_at_token,
         n_workers=1
     )
 

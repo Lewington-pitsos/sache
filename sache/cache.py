@@ -445,7 +445,8 @@ class S3RCache:
                  buffer_size=2,
                  paths=None,
                  n_workers=1,
-                 start_from=None
+                 start_at_token=None,
+                 region='us-east-1',
             ) -> None:
 
         if mp.get_start_method(allow_none=True) != 'spawn':
@@ -454,6 +455,7 @@ class S3RCache:
             except RuntimeError as e:
                 raise RuntimeError(f'Cannot set start method to spawn. You may have created a SRCache outside of the main process. Error: {e}')
 
+        self.region = region
         self.s3_prefix = s3_prefix
         self.s3_client = s3_client
         self.bucket_name = bucket_name
@@ -472,10 +474,10 @@ class S3RCache:
 
         tokens_per_file = self.samples_per_file * self.metadata['sequence_length']
 
-        if start_from is not None:
-            self.start_from = math.ceil(start_from / tokens_per_file)
+        if start_at_token is not None:
+            self.start_at_file = math.ceil(start_at_token / tokens_per_file)
         else:
-            self.start_from = 0
+            self.start_at_file = 0
 
         self._running_processes = []
         self.n_workers = n_workers
@@ -532,12 +534,12 @@ class S3RCache:
         # Iterate over each page of the list_objects_v2 response
         for page in paginator.paginate(Bucket=self.bucket_name, Prefix=self.s3_prefix):
             paths.extend(
-                f"http://{self.bucket_name}.s3.amazonaws.com/{obj['Key']}" 
+                f"http://{self.bucket_name}.s3.{self.region}.amazonaws.com/{obj['Key']}" 
                 for obj in page.get('Contents', []) if obj['Key'] != _metadata
             )
 
         # Sort the paths for consistency
-        return sorted(paths[self.start_from:])
+        return sorted(paths[self.start_at_file:])
 
     def __iter__(self):
         self._reset()

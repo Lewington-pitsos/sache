@@ -86,7 +86,6 @@ class SacheLogger():
     def log_params(self, params):
         if self.use_wandb:
             wandb.config.update(params)
-
         self._log_local(params)
 
     def log(self, data):
@@ -101,11 +100,13 @@ class SacheLogger():
 
         self._log_local(data)
 
-    def finalize(self):
+    def remote_sync(self):
         if self.s3_backup_bucket is not None: 
             self.s3_client.upload_file(self._log_filename(), self.s3_backup_bucket, self.s3_backup_path)
             print(f"Uploaded log file to {self.s3_backup_path}")
 
+    def finalize(self):
+        self.remote_sync()
         if self.use_wandb:
             wandb.finish()
 

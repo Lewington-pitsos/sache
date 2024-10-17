@@ -502,7 +502,7 @@ def train_sae(
         })
         lg.log_sae(sae)
 
-        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_from=starting_token)
+        cache = S3RCache(s3_client, data_name, data_bucket, chunk_size=MB * 16, concurrency=200, n_workers=n_cache_workers, buffer_size=cache_buffer_size, start_at_token=starting_token)
         print('total number of files to download', len(cache))
 
         total_size = cache.metadata['bytes_per_file']
@@ -593,6 +593,7 @@ def train_sae(
                         s3_client=s3_client,
                         bucket_name=log_bucket
                     )
+                    lg.remote_sync()
                     next_save += save_every
 
                 if token_count >= n_tokens:

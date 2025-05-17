@@ -207,8 +207,8 @@ def save_sae_checkpoint(
     model_filename = os.path.join(model_dir, f'{n_iter}.pt')
     
     checkpoint = {
-        'model_state_dict': sae.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'model_state_dict': sae.state_dict(),
         'token_count': token_count,
         'dead_latents': dead_latents,
         'n_iter': n_iter,

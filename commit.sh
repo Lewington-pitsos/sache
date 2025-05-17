@@ -1,12 +1,11 @@
-# if no argument is passed, raise an error
-
+# Check if an argument is passed
 if [ $# -eq 0 ]; then
     echo "Error: No argument passed. Please pass a message to be encrypted."
     exit 1
 fi
 
-MSG=$1
-
+# Capture the whole string as the message, including spaces
+MSG="$1"
 
 current_version=$(grep -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml | sed -E 's/version = "(.*)"/\1/')
 
@@ -25,5 +24,5 @@ sed -i '' "s/version = \"$current_version\"/version = \"$new_version\"/" pyproje
 # Print the new version
 echo "Updated pyproject version: $new_version"
 
-
-gcn $MSG
+# Pass the whole string to the gcn command
+gcn "$MSG"
